@@ -73,12 +73,21 @@ def trials_from_manifest(args):
             d = json.loads(line)
             if args.tag and args.tag not in (d.get("tags") or []):
                 continue
-            image = (d.get("images") or {}).get(args.view)
+            images = d.get("images") or {}
+            if args.view == "top":
+                paths = [images.get("top")]
+            else:
+                yaw_images = images.get("yaws") or {}
+                wanted = sorted(int(k) for k in yaw_images) if args.yaws == "all" else [int(y) for y in args.yaws.split(",") if y.strip()]
+                paths = [yaw_images.get(str(y)) or (images.get("perspective") if y == 0 else None) for y in wanted]
+            paths = [os.path.join(root, p) for p in paths if p]
             ascii_path = os.path.join(root, d["ascii"]) if d.get("ascii") else None
+            json_path = os.path.join(root, d["json"]) if d.get("json") else None
             items.append({
                 "id": d["id"], "maze": None, "room": d,
-                "image_path": os.path.join(root, image) if image else None,
+                "image_path": paths[0] if paths else None, "image_paths": paths,
                 "ascii": open(ascii_path).read() if ascii_path and os.path.exists(ascii_path) else None,
+                "json": open(json_path).read() if json_path and os.path.exists(json_path) else None,
             })
     rnd = Mulberry32(normalize_seed(args.session_seed or 0))
     # keep pairs together: sample pairs, then shuffle members
@@ -133,12 +142,30 @@ def image_bytes(item, ropts):
 
 def build_content(item, ropts, repr_, prompt):
     content = []
-    if repr_ != "ascii":
-        data = base64.standard_b64encode(image_bytes(item, ropts)).decode("ascii")
-        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}})
-    text = prompt if item.get("maze") is not None else build_room_prompt(repr_, item["room"].get("legend") or {}, item.get("view", "perspective"))
-    if repr_ != "image":
-        text += "\n\n" + (mazes.to_ascii(item["maze"]) if item.get("maze") is not None else (item.get("ascii") or ""))
+    if repr_ in ("image", "both"):
+        paths = item.get("image_paths") or ([item["image_path"]] if item.get("image_path") else [])
+        if item.get("maze") is not None or not paths:
+            data = base64.standard_b64encode(image_bytes(item, ropts)).decode("ascii")
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}})
+        else:
+            for p in paths:
+                with open(p, "rb") as f:
+                    content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.standard_b64encode(f.read()).decode("ascii")}})
+    if item.get("maze") is not None:
+        text = prompt
+        if repr_ != "image":
+            text += "\n\n" + mazes.to_ascii(item["maze"])
+    else:
+        room_repr = "ascii" if repr_ in ("ascii", "json") else repr_
+        text = build_room_prompt(room_repr, item["room"].get("legend") or {}, item.get("view", "perspective"))
+        if len(content) > 1:
+            text = text.replace("The image shows the room", f"The {len(content)} images show the room from the game camera rotated in 90-degree steps")
+        if repr_ in ("ascii", "both"):
+            text += "\n\n" + (item.get("ascii") or "")
+        if repr_ == "json":
+            if not item.get("json"):
+                raise FileNotFoundError(f"no JSON observation for {item['id']}; render the manifest with a current mazebench/render.js")
+            text += "\n\nJSON observation:\n" + item["json"]
     content.append({"type": "text", "text": text})
     return content
 
@@ -259,6 +286,7 @@ def parse_args(argv=None):
     src.add_argument("--manifest", help="manifest.jsonl written by mazebench/render.js (pre-rendered MazeBench rooms)")
     src.add_argument("--view", default="perspective", help="which rendered view to send for --manifest items (perspective | top)")
     src.add_argument("--tag", default=None, help="only --manifest rooms carrying this mechanics tag (ice, box, holes, orange, slope, lift, elevation)")
+    src.add_argument("--yaws", default="0", help="camera rotations of --manifest rooms to send in one prompt: '0', '0,180', or 'all'")
     src.add_argument("--split", default=None, help="dataset split to use (train/val/test); default all")
     src.add_argument("--limit", type=int, default=0, help="balanced number of dataset items to score (0 = all)")
     src.add_argument("--preset", choices=sorted(mazes.PRESETS), default="medium")
@@ -282,7 +310,8 @@ def parse_args(argv=None):
     mdl.add_argument("--model", default="claude-opus-5")
     mdl.add_argument("--effort", choices=["low", "medium", "high", "xhigh", "max"], default=None)
     mdl.add_argument("--max-tokens", type=int, default=16000, dest="max_tokens")
-    mdl.add_argument("--representation", choices=["image", "ascii", "both"], default="image")
+    mdl.add_argument("--representation", choices=["image", "ascii", "both", "json"], default="image",
+                     help="json = the engine's JSON observation (manifest rooms only)")
     mdl.add_argument("--concurrency", type=int, default=2)
     mdl.add_argument("--fallbacks", action="store_true",
                      help="enable server-side refusal fallbacks (off by default: a fallback model would contaminate the score)")

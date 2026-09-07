@@ -62,7 +62,24 @@
     return Array.from(byPair.values()).filter(function (p) { return p.length === 2 && p[0].solvable !== p[1].solvable; })
       .map(function (p) { return p[0].solvable ? p : [p[1], p[0]]; });
   }
-  function roomImage(item) { return item.images[roomView()] || item.images.perspective || item.images.top || ''; }
+  let roomYaw = 0;   // current camera rotation shown for rooms (0, 90, 180, 270)
+  function roomYaws(item) { return item && item.images && item.images.yaws ? Object.keys(item.images.yaws).map(Number).sort(function (a, b) { return a - b; }) : [0]; }
+  function roomImage(item, yaw) {
+    if (roomView() === 'perspective' && item.images.yaws) {
+      const y = yaw === undefined ? roomYaw : yaw;
+      if (item.images.yaws[String(y)]) return item.images.yaws[String(y)];
+    }
+    return item.images[roomView()] || item.images.perspective || item.images.top || '';
+  }
+  function rotateRoom(step) {
+    const item = (task.current && task.current.item) || renderRooms.left;
+    const yaws = roomYaws(item);
+    if (yaws.length < 2) return;
+    const i = Math.max(0, yaws.indexOf(roomYaw));
+    roomYaw = yaws[(i + step + yaws.length) % yaws.length];
+    if (task.current && task.current.item && !$('#task-stage').hidden) { $('#task-image').src = roomImage(task.current.item); task.rotations = (task.rotations || 0) + 1; }
+    if ($('#tab-explore').classList.contains('active')) renderRooms();
+  }
   function populateRoomSets() {
     const keys = Object.keys(STIM);
     src.set.innerHTML = keys.map(function (k) { return '<option value="' + k + '">' + (STIM[k].label || k) + '</option>'; }).join('');
@@ -262,7 +279,7 @@
   /* ------------------------------------------------------------------ */
   /* Task: human trials                                                   */
   /* ------------------------------------------------------------------ */
-  const task = { trials: [], i: 0, rows: [], t0: 0, timers: [], accepting: false, feedback: true, stimMs: 0, fixMs: 400 };
+  const task = { trials: [], i: 0, rows: [], t0: 0, timers: [], accepting: false, feedback: true, stimMs: 0, fixMs: 400, rotations: 0 };
   const taskCanvas = $('#task-canvas');
 
   function clearTimers() { task.timers.forEach(clearTimeout); task.timers = []; }
@@ -300,6 +317,8 @@
     if (task.mode === 'rooms') {
       taskCanvas.hidden = true; img.hidden = false;
       task.current = { trial: t, item: t.item };
+      roomYaw = 0; task.rotations = 0;
+      $('#task-rotate').hidden = roomYaws(t.item).length < 2;
       img.src = roomImage(t.item);
       ready = (img.decode ? img.decode() : Promise.resolve()).catch(function () { });
     } else {
@@ -337,6 +356,7 @@
     row.correct = (answerYes === t.solvable) ? 1 : 0;
     row.rt = Math.round(rt);
     row.maskedBeforeAnswer = task.masked ? 1 : 0;
+    if (task.mode === 'rooms') row.rotations = task.rotations || 0;
     task.rows.push(row);
     task.i++;
     const box = $('#task-feedback-box');
@@ -357,6 +377,8 @@
     const k = ev.key.toLowerCase();
     if (k === 'f' || k === 'y' || k === 'arrowleft') { ev.preventDefault(); respond(true); }
     else if (k === 'j' || k === 'n' || k === 'arrowright') { ev.preventDefault(); respond(false); }
+    else if (k === 'q') { ev.preventDefault(); rotateRoom(-1); }
+    else if (k === 'e') { ev.preventDefault(); rotateRoom(1); }
   });
   function finishTask() {
     showPanel('results');
@@ -454,6 +476,8 @@
     const left = a.id < b.id ? a : b, right = left === a ? b : a;
     $('#rooms-img-a').src = roomImage(left);
     $('#rooms-img-b').src = roomImage(right);
+    $('#rooms-rotate').hidden = roomYaws(left).length < 2;
+    $('#rooms-yaw').textContent = roomYaws(left).length < 2 ? '' : 'camera ' + roomYaw + '°';
     $('#rooms-cap-a').textContent = roomCaption(left, reveal);
     $('#rooms-cap-b').textContent = roomCaption(right, reveal);
     $('#rooms-pos').textContent = 'pair ' + (roomsIndex + 1) + ' of ' + cur.n + ' · room ' + a.room + (a.world ? ' (world ' + a.world + ')' : '') + ' · ' + (a.tags || []).join(', ');
@@ -466,6 +490,10 @@
   $('#rooms-next').addEventListener('click', function () { roomsIndex++; renderRooms(); });
   $('#rooms-random').addEventListener('click', function () { roomsIndex = Math.floor(Math.random() * 1e9); renderRooms(); });
   $('#rooms-reveal').addEventListener('change', renderRooms);
+  $('#rooms-rotate-left').addEventListener('click', function () { rotateRoom(-1); });
+  $('#rooms-rotate-right').addEventListener('click', function () { rotateRoom(1); });
+  $('#task-rotate-left').addEventListener('click', function () { rotateRoom(-1); });
+  $('#task-rotate-right').addEventListener('click', function () { rotateRoom(1); });
   $('#rooms-json').addEventListener('click', function () { const cur = currentPair(); if (cur) download(cur.pair[0].pair + '.json', JSON.stringify(cur.pair, null, 1), 'application/json'); });
   $('#rooms-ascii-copy').addEventListener('click', function (e) { if (renderRooms.left) copyText(renderRooms.left.ascii || '', e.target); });
   $('#rooms-prompt-copy').addEventListener('click', function (e) { copyText(currentPrompt('image'), e.target); });
@@ -495,10 +523,15 @@
     const content = [];
     const item = stimulus.item, maze = stimulus.maze;
     if (opts.repr !== 'ascii') {
-      const data = item ? await imageFileToBase64(roomImage(item)) : MazeRender.toDataURL(maze, renderOpts(maze, null, 640)).split(',')[1];
-      content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: data } });
+      if (item) {
+        const urls = roomView() === 'perspective' ? roomYaws(item).map(function (y) { return roomImage(item, y); }) : [roomImage(item)];
+        for (const url of urls) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: await imageFileToBase64(url) } });
+      } else {
+        content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: MazeRender.toDataURL(maze, renderOpts(maze, null, 640)).split(',')[1] } });
+      }
     }
     let text = item ? MazePrompt.buildRoomPrompt(opts.repr, item.legend || {}, roomView()) : opts.prompt;
+    if (item && content.length > 1) text = text.replace('The image shows the room', 'The ' + content.length + ' images show the room from the game camera rotated in 90-degree steps');
     if (opts.repr !== 'image') text += '\n\n' + (item ? (item.ascii || '') : MazeGen.toAscii(maze));
     content.push({ type: 'text', text: text });
     const body = { model: opts.model, max_tokens: 16000, messages: [{ role: 'user', content: content }] };

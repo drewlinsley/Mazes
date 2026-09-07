@@ -97,6 +97,29 @@ as a script so it also works when opened from disk.
 The prompt (`web/prompt.js` / `mazes/prompt.py`, `buildRoomPrompt`) explains
 the mechanics in the words of the game's own toolbox descriptions.
 
+## More rooms: community and featured worlds
+
+The Build page of mazebench.com exports a world as JSON (`mazebench-build-world-v1`).
+`import_world.js` turns such an export, or a local draft world directory, into a
+room directory the pipeline reads through `--world`:
+
+```bash
+node mazebench/import_world.js --json downloads/some-world.json --id community-some-world
+node mazebench/solve_rooms.js --world mazebench/worlds/community-some-world --out mazebench/rooms-community.jsonl
+node mazebench/perturb.js --world mazebench/worlds/community-some-world --rooms mazebench/rooms-community.jsonl --out mazebench/variants-community.jsonl
+node mazebench/render.js --variants mazebench/variants-community.jsonl --out data/mazebench-community --yaws 0,90,180,270
+```
+
+## Camera rotation and observations
+
+The MazeBench post points out that tall walls can hide objects, so agents must
+rotate the camera. `render.js --yaws 0,90,180,270` renders the game camera at
+each rotation (`images/<id>-perspective-y90.png` and so on); the manifest lists
+them under `images.yaws`. The evaluation script (`--yaws all`) and the
+Verifiers environment (`yaws`) can send several rotations of one room in a
+single prompt. Alongside the ASCII observation, `json/<id>.json` holds the
+engine's JSON observation, the text-only track MazeBench offers besides ASCII.
+
 ## File formats
 
 `rooms.jsonl`: one line per shipped room with `status` (`solved`, `unsolved`,

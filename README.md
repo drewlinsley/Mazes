@@ -37,7 +37,8 @@ package, so a maze looked at on the website can be regenerated in a dataset.
 | `mazebench/` | MazeBench pipeline: solve the shipped rooms, make one-edit pairs, generate rooms with mechanics, render frames and ASCII with the engine. |
 | `vendor/MazeBenchEngine` | The MazeBench engine (git submodule, MIT), used unmodified for solving, rendering and ASCII observations. |
 | `web/stimuli/mazebench/` | Pre-rendered room pairs the website uses (written by `scripts/export_stimuli.py`). |
-| `tests/` | pytest suite: independent solver checks, minimal-pair invariants, JS/Python parity, rendering; Playwright scripts for both website modes. |
+| `environments/maze_snapshot/` | Prime Intellect Verifiers environment: the same task as a single-turn eval that runs on Prime Intellect inference (`vf-eval`), packaged like MazeBench's own environment. |
+| `tests/` | pytest suite: independent solver checks, minimal-pair invariants, JS/Python parity, rendering, the Verifiers environment; Playwright scripts for both website modes. |
 
 ## Quick start
 
@@ -164,6 +165,19 @@ objects) and `config.json`. Labels are exactly balanced inside every split; with
 (2H+1)×(2W+1) pixel maze used by Pathfinder-style pixel renderings (`--style blocks`).
 
 ## Model evaluation
+
+Three routes score the same prompts and the same balanced trials: the website's
+Model tab, `scripts/eval_model.py` (Anthropic SDK), and the Verifiers
+environment in `environments/maze_snapshot/`, which works with any
+OpenAI-compatible endpoint through `vf-eval`, including Prime Intellect
+inference:
+
+```bash
+cd environments/maze_snapshot && pip install -e .
+vf-eval maze-snapshot -m <model> -b <base url> -k <API_KEY_ENV_VAR> -n 40
+vf-eval maze-snapshot -m <model> -b <base url> -k <API_KEY_ENV_VAR> -n 54 \
+  -a '{"source": "rooms", "manifest": "../../data/mazebench-shipped/manifest.jsonl", "yaws": "0,90,180,270"}'
+```
 
 `scripts/eval_model.py` and the website's Model tab use the same prompt
 (`web/prompt.js` / `mazes/prompt.py`) and the same trial construction (a session seed

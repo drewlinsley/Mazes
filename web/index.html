@@ -117,7 +117,7 @@
       <label>Fixation (ms) <input id="task-fix" type="number" min="0" max="5000" step="50" value="400"></label>
     </div>
     <label class="check"><input id="task-feedback" type="checkbox" checked> show feedback after each answer</label>
-    <p class="hint">Keys: <kbd>F</kbd> / <kbd>Y</kbd> / <kbd>←</kbd> = solvable, <kbd>J</kbd> / <kbd>N</kbd> / <kbd>→</kbd> = not solvable.</p>
+    <p class="hint">Keys: <kbd>F</kbd> / <kbd>Y</kbd> / <kbd>←</kbd> = solvable, <kbd>J</kbd> / <kbd>N</kbd> / <kbd>→</kbd> = not solvable. Rooms with several camera rotations: <kbd>Q</kbd> / <kbd>E</kbd> rotate the camera (the number of rotations is recorded).</p>
     <button id="task-start" class="primary">Start</button>
   </div>
 
@@ -128,6 +128,7 @@
     </div>
     <p id="task-question" class="question">Is there a path from S to G?</p>
     <div class="canvas-wrap"><canvas id="task-canvas"></canvas><img id="task-image" class="stim-image" alt="room" hidden><div id="task-mask" class="mask" hidden>?</div><div id="task-fixation" class="fixation" hidden>+</div></div>
+    <div id="task-rotate" class="row rotate" hidden><button id="task-rotate-left">↶ rotate <kbd>Q</kbd></button><button id="task-rotate-right">rotate ↷ <kbd>E</kbd></button></div>
     <div id="task-feedback-box" class="feedback" hidden></div>
     <div class="answer-buttons">
       <button id="btn-yes" class="answer yes">Solvable <kbd>F</kbd></button>
@@ -157,6 +158,7 @@
       <button id="rooms-next">next ▶</button>
       <button id="rooms-random">random</button>
       <label class="check"><input id="rooms-reveal" type="checkbox" checked> show labels</label>
+      <span id="rooms-rotate" hidden><button id="rooms-rotate-left">↶ rotate</button> <button id="rooms-rotate-right">rotate ↷</button> <span id="rooms-yaw" class="status"></span></span>
     </div>
     <div class="pair">
       <figure><img id="rooms-img-a" class="stim-image" alt="room A"><figcaption id="rooms-cap-a"></figcaption></figure>
