@@ -16,6 +16,11 @@ evaluation script:
   world, each changed by a single edit, or generated from scratch with the same
   mechanics. See [`mazebench/README.md`](mazebench/README.md).
 
+The website ships with two pre-rendered room sets: 27 pairs made from 15 rooms
+of the MazeBench world, and 40 pairs of generated rooms (from 60 available in
+`mazebench/generated.jsonl`). Both can be regenerated and extended with the
+pipeline scripts.
+
 ![a minimal pair: the solvable and the unsolvable version of one seed, and the unsolvable one with its two disconnected parts revealed](docs/pair-example.png)
 
 Everything is seeded and reproduced bit for bit by the browser code and the Python
@@ -41,7 +46,7 @@ Open `web/index.html` in a browser (it works from a local file, no server needed
 
 ```bash
 pip install -r requirements.txt
-python -m pytest                                   # 90 tests, needs node for the parity tests
+python -m pytest                                   # needs node for the parity and pipeline tests
 
 # 2000 medium mazes (10x10), exactly half solvable, 80/10/10 splits
 python scripts/make_dataset.py --out data/medium --n 2000 --preset medium

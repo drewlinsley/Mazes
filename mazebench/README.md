@@ -39,6 +39,15 @@ floating floors to push into them, or an orange wall opened by pushing a box
 onto its button. The solver labels the base room, and the same pairing step
 as above produces the two members.
 
+## What the shipped pipeline produced
+
+| Step | Result |
+| --- | --- |
+| `solve_rooms.js` (cap 60k states) | 258 rooms: 170 without a gem, 21 solvable, 31 unsolvable as single rooms, 34 over budget |
+| `perturb.js` (2 pairs per room) | 28 pairs from 15 rooms; 22 pairs use the same kind of edit for both members |
+| `generate_rooms.js --n 60` | 60 paired rooms from 101 attempts (36 maze, 30 ice, 26 orange, 16 boxes, 12 pits variants) |
+| `render.js` | every label re-verified through the engine's level loader; one shipped variant disagreed and is excluded from the exported set |
+
 ## Running the pipeline
 
 ```bash
