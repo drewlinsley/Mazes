@@ -1,0 +1,3 @@
+pillow>=10
+anthropic>=1.0      # only for scripts/eval_model.py
+pytest>=8           # tests
