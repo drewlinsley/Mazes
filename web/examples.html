@@ -166,8 +166,9 @@
     const rnd = MazeGen.mulberry32(shuffleSeed);
     const angle = fAngle.value;
     let list = items.filter((it) => (!fSet.value || it.set === fSet.value) && (!fTag.value || (it.tags || []).includes(fTag.value)));
-    // keep pairs adjacent-but-apart: shuffle, then assign a camera per card
+    // shuffle, then lead with rooms that were rendered from several rotations so the first screen mixes camera angles
     rnd.shuffle(list);
+    list.sort((a, b) => yawsOf(b).length - yawsOf(a).length);
     const out = [];
     for (const it of list) {
       const yaws = yawsOf(it);
@@ -232,6 +233,8 @@
 
   // 2D mazes: eight pairs, both members shown
   const mg = $('#maze-grid');
+  function renderMazes() {
+  mg.innerHTML = '';
   for (let i = 0; i < 8; i++) {
     const pair = MazeGen.generatePair(Object.assign({}, MazeGen.PRESETS.medium, { seed: 1000 + i }));
     [pair.positive, pair.negative].forEach((m) => {
@@ -254,7 +257,9 @@
       mg.appendChild(fig);
     });
   }
-  fLabels.addEventListener('change', () => { mg.querySelectorAll('.strip').forEach((s, k) => { const m = k % 2 === 0; }); });
+  }
+  renderMazes();
+  fLabels.addEventListener('change', renderMazes);
 }());
 </script>
 </body>
