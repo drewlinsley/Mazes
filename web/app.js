@@ -161,7 +161,16 @@
   /* ------------------------------------------------------------------ */
   /* Helpers                                                              */
   /* ------------------------------------------------------------------ */
+  // hosted on claude.ai, files go through the viewer's save prompt; elsewhere a plain download link
+  let claudeDownloads = null;
+  if (window.claude && typeof window.claude.use === 'function') {
+    try { window.claude.use('downloads').then(function (d) { claudeDownloads = d || null; }, function () { }); } catch (e) { /* no capability */ }
+  }
   function download(filename, content, type) {
+    if (claudeDownloads) {
+      claudeDownloads.save({ filename: filename, data: content instanceof Blob ? content : String(content) }).catch(function () { /* declined or unavailable */ });
+      return;
+    }
     const blob = content instanceof Blob ? content : new Blob([content], { type: type || 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
