@@ -145,7 +145,7 @@ async function main() {
       fs.appendFileSync(manifestPath, JSON.stringify({
         id: v.id, room: v.room, world: v.world, pair: v.pair, solvable: v.solvable, verified: v.verified ?? null,
         edit: v.edit, sameType: v.sameType, tags: v.tags, gems: v.gems, baseMoves: v.baseMoves, moves: v.moves, expanded: v.expanded,
-        images: v.images, ascii: path.join('ascii', v.id + '.txt'), legend: v.legend || {}, level: v.level
+        generated: v.generated || null, images: v.images, ascii: path.join('ascii', v.id + '.txt'), legend: v.legend || {}, level: v.level
       }) + '\n');
       done++;
       if (done % 10 === 0 || done === selected.length) log(`${done}/${selected.length} rendered (${Math.round((Date.now() - started) / 1000)}s)`);
