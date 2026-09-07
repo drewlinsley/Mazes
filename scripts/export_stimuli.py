@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Copy a rendered MazeBench stimulus set into the website (web/stimuli/mazebench).
+
+    python scripts/export_stimuli.py --manifest data/mazebench/manifest.jsonl --set shipped \
+        --label "MazeBench rooms, one edit from the original" --max-pairs 60 --size 448
+
+Writes web/stimuli/mazebench/images/<id>-<view>.png (resized) and merges the set
+into web/stimuli/mazebench/manifest.js, a script that assigns window.MAZEBENCH_STIMULI
+so the page also works when opened from disk.
+"""
+import argparse
+import json
+import os
+import re
+import sys
+
+from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from mazes.prng import Mulberry32, normalize_seed  # noqa: E402
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--manifest", required=True)
+    ap.add_argument("--set", required=True, help="set id, e.g. shipped or generated")
+    ap.add_argument("--label", default=None)
+    ap.add_argument("--out", default=os.path.join("web", "stimuli", "mazebench"))
+    ap.add_argument("--max-pairs", type=int, default=0, help="keep at most this many pairs (0 = all)")
+    ap.add_argument("--views", default="perspective,top")
+    ap.add_argument("--size", type=int, default=448, help="longest side of the exported images")
+    ap.add_argument("--colors", type=int, default=128, help="palette size for the exported PNGs (0 = keep full colour)")
+    ap.add_argument("--seed", default="1", help="seed for choosing which pairs to keep")
+    ap.add_argument("--remove", action="store_true", help="remove this set instead of adding it")
+    args = ap.parse_args()
+
+    os.makedirs(os.path.join(args.out, "images"), exist_ok=True)
+    manifest_js = os.path.join(args.out, "manifest.js")
+    sets = {}
+    if os.path.exists(manifest_js):
+        raw = open(manifest_js).read()
+        m = re.search(r"window\.MAZEBENCH_STIMULI\s*=\s*(\{.*\});?\s*$", raw, re.S)
+        if m:
+            sets = json.loads(m.group(1)).get("sets", {})
+    if args.remove:
+        old = sets.pop(args.set, None)
+        for item in (old or {}).get("items", []):
+            for p in item.get("images", {}).values():
+                fp = os.path.join(args.out, p.replace("stimuli/mazebench/", ""))
+                if os.path.exists(fp):
+                    os.remove(fp)
+    else:
+        root = os.path.dirname(os.path.abspath(args.manifest))
+        rows = [json.loads(l) for l in open(args.manifest) if l.strip()]
+        by_pair = {}
+        for r in rows:
+            by_pair.setdefault(r["pair"], []).append(r)
+        pairs = [p for p in by_pair.values() if len(p) == 2 and p[0]["solvable"] != p[1]["solvable"]
+                 and all(r.get("verified") in (True, False, None) and (r.get("verified") is None or r["verified"] == r["solvable"]) for r in p)]
+        rnd = Mulberry32(normalize_seed(args.seed))
+        rnd.shuffle(pairs)
+        if args.max_pairs:
+            pairs = pairs[: args.max_pairs]
+        views = [v for v in args.views.split(",") if v]
+        items = []
+        for pair in pairs:
+            for r in pair:
+                images = {}
+                for view in views:
+                    src = (r.get("images") or {}).get(view)
+                    if not src:
+                        continue
+                    img = Image.open(os.path.join(root, src)).convert("RGB")
+                    scale = args.size / max(img.size)
+                    if scale < 1:
+                        img = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
+                    name = f"{r['id']}-{view}.png"
+                    if args.colors:
+                        img = img.quantize(colors=args.colors, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+                    img.save(os.path.join(args.out, "images", name), optimize=True)
+                    images[view] = f"stimuli/mazebench/images/{name}"
+                ascii_text = ""
+                if r.get("ascii") and os.path.exists(os.path.join(root, r["ascii"])):
+                    ascii_text = open(os.path.join(root, r["ascii"])).read()
+                items.append({
+                    "id": r["id"], "room": r.get("room"), "world": r.get("world"), "pair": r["pair"], "solvable": r["solvable"],
+                    "edit": r.get("edit"), "sameType": r.get("sameType"), "tags": r.get("tags") or [], "gems": r.get("gems"),
+                    "baseMoves": r.get("baseMoves"), "moves": r.get("moves"), "generated": r.get("generated"),
+                    "images": images, "ascii": ascii_text, "legend": r.get("legend") or {},
+                })
+        sets[args.set] = {"label": args.label or args.set, "views": views, "items": items}
+        print(f"exported {len(items)} items ({len(pairs)} pairs) into set '{args.set}'")
+    with open(manifest_js, "w") as f:
+        f.write("// generated by scripts/export_stimuli.py — pre-rendered MazeBench rooms for the website\n")
+        f.write("window.MAZEBENCH_STIMULI = " + json.dumps({"sets": sets}, separators=(",", ":")) + ";\n")
+    total = sum(len(s["items"]) for s in sets.values())
+    print(f"manifest.js now holds {len(sets)} set(s), {total} items")
+
+
+if __name__ == "__main__":
+    main()

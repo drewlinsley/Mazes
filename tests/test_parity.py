@@ -8,7 +8,7 @@ import pytest
 
 import mazes
 from mazes.prng import Mulberry32, normalize_seed
-from mazes.prompt import build_prompt, parse_answer
+from mazes.prompt import build_prompt, build_room_prompt, parse_answer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DUMP = os.path.join(ROOT, "tests", "parity_dump.js")
@@ -42,6 +42,8 @@ def test_js_python_parity(params):
                        {"hello": "hello", "neg": "-7", "big": "123456789012345", "uni": "mäze ✓"}.items()},
         "prompts": [build_prompt("image"), build_prompt("ascii"), build_prompt("both", markers="dots", theme="dark"),
                     build_prompt("image", grayscale=True), build_prompt("image", markers="letters", theme="dark")],
+        "roomPrompts": [build_room_prompt("image", {}, "perspective"), build_room_prompt("ascii", {"W": "wall", "P": "player", "G": "gem"}, "top"),
+                        build_room_prompt("both", {"I": "ice"}, "top")],
         "parsed": [parse_answer(t) for t in ["blah\nANSWER: NO", "yes it is.\nANSWER: YES", "I think no", "unclear",
                                              "ANSWER: yes\nANSWER: no", "", "Yes and no"]],
     }

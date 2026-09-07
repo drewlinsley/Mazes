@@ -1,10 +1,20 @@
 # Maze solvability: a snapshot classification task
 
-Half of the mazes have a path from the start **S** to the goal **G**, half do not.
-A human or a model sees one snapshot and answers *solvable* or *not solvable*.
-The task targets the same computation as Pathfinder (is this contour connected to
-that one?) but in a maze: the answer cannot be read from any local feature and
-requires tracing connectivity through the whole image.
+Half of the puzzles are solvable, half are not. A human or a model sees one
+snapshot and answers *solvable* or *not solvable*. The task targets the same
+computation as Pathfinder (is this contour connected to that one?): the answer
+cannot be read from any local feature and requires tracing through the whole
+image.
+
+Two families of stimuli share one website, one trial protocol and one
+evaluation script:
+
+- **2D mazes**, generated in the browser or in Python: is there a path from S to G?
+- **[MazeBench](https://mazebench.com) rooms**, rendered by the MazeBench game
+  engine itself: can the player collect the gem in this room of walls, ice,
+  boxes, slopes, lifts, buttons and pits? Rooms come either from the MazeBench
+  world, each changed by a single edit, or generated from scratch with the same
+  mechanics. See [`mazebench/README.md`](mazebench/README.md).
 
 ![a minimal pair: the solvable and the unsolvable version of one seed, and the unsolvable one with its two disconnected parts revealed](docs/pair-example.png)
 
@@ -18,8 +28,11 @@ package, so a maze looked at on the website can be regenerated in a dataset.
 | `web/` | Static site, no build step. `maze.js` is the reference generator, `render.js` draws mazes, `prompt.js` holds the model prompt, `app.js` is the UI. |
 | `mazes/` | Python package: `generate.py` (port of `maze.js`), `render.py` (PIL renderer, same geometry as `render.js`), `prompt.py`, `prng.py`. |
 | `scripts/make_dataset.py` | Writes a balanced image dataset with labels, splits and full maze metadata. |
-| `scripts/eval_model.py` | Sends snapshots (image, ASCII or both) to Claude and scores accuracy and d′. |
-| `tests/` | pytest suite: independent solver checks, minimal-pair invariants, JS/Python parity, rendering. |
+| `scripts/eval_model.py` | Sends snapshots (image, ASCII or both) to Claude and scores accuracy and d′; works on generated mazes, image datasets and MazeBench room manifests. |
+| `mazebench/` | MazeBench pipeline: solve the shipped rooms, make one-edit pairs, generate rooms with mechanics, render frames and ASCII with the engine. |
+| `vendor/MazeBenchEngine` | The MazeBench engine (git submodule, MIT), used unmodified for solving, rendering and ASCII observations. |
+| `web/stimuli/mazebench/` | Pre-rendered room pairs the website uses (written by `scripts/export_stimuli.py`). |
+| `tests/` | pytest suite: independent solver checks, minimal-pair invariants, JS/Python parity, rendering; Playwright scripts for both website modes. |
 
 ## Quick start
 
@@ -43,6 +56,10 @@ python scripts/make_dataset.py --out data/pairs --n 1000 --preset medium --pairs
 # ask a model (reads ANTHROPIC_API_KEY); --dry-run shows the prompts without calling the API
 python scripts/eval_model.py --preset medium --n 40 --model claude-opus-5 --out results/opus5-medium.jsonl
 python scripts/eval_model.py --dataset data/hard --split test --limit 200 --representation image
+
+# MazeBench rooms (pre-rendered by mazebench/render.js): the game-camera frame, or the ASCII observation
+python scripts/eval_model.py --manifest data/mazebench-shipped/manifest.jsonl --view perspective --limit 60
+python scripts/eval_model.py --manifest data/mazebench-generated/manifest.jsonl --representation ascii --tag ice
 ```
 
 ```python
@@ -56,6 +73,9 @@ mazes.solve(m)["solvable"]                                             # indepen
 
 ## The website
 
+The *Source* selector at the top of the settings switches between generated
+2D mazes and pre-rendered MazeBench rooms; the tabs below work for both.
+
 - **Task**: blocks of trials with exact 50/50 labels in a shuffled order. Keys `F`/`Y`/`←`
   for solvable and `J`/`N`/`→` for not solvable. Options for a stimulus time limit
   (the maze is masked afterwards, the answer is still accepted), fixation interval and
@@ -64,7 +84,9 @@ mazes.solve(m)["solvable"]                                             # indepen
   with the seed of every trial.
 - **Explore**: step through seeds, view the solvable and unsolvable version side by
   side, overlay the solution or the components with the missing link highlighted,
-  download PNG/JSON, copy the ASCII form or the model prompt.
+  download PNG/JSON, copy the ASCII form or the model prompt. For rooms, the two
+  members of a pair are shown side by side with the edit that separates them, and
+  the labels can be hidden to test yourself.
 - **Model**: sends snapshots straight from the browser to the Anthropic API and scores
   the replies. The key stays in the tab and only goes to `api.anthropic.com`; use a
   short-lived key, as anything in a browser can be read by whoever controls the page.

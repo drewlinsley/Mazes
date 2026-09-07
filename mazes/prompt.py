@@ -32,6 +32,43 @@ def build_prompt(repr_="image", markers="sg", grayscale=False, theme="light"):
     return text + _QUESTION
 
 
+ROOM_RULES = (
+    "The room is a 16 by 16 grid of cells seen from above. The green cube is the player; it moves up, down, left or "
+    "right one cell at a time. The cyan gem is collected by stepping onto its cell. Dark blocks are walls: they cannot be "
+    "entered, and a raised block can only be reached by a lift or an ice slope. Tan cells are floor. Light blue cells are ice: "
+    "the player slides across ice until a wall, an object or a non-ice cell stops it. Blue cubes are boxes that the player "
+    "can push one cell at a time if the cell beyond is free; boxes with the same number are joined and move together, and "
+    "a box cannot leave the room. Purple ramps are ice slopes that carry a slide up or down one level. Green squares are lifts: "
+    "standing on a lowered lift raises the player one level, and a raised lift lowers it. Orange walls block the way and drop "
+    "only while an orange button is held down by the player or by a box; every button in the room must be held at once. "
+    "Black gaps in the floor are pits: anything walking into a pit is lost, but a floating floor tile can be pushed into a pit "
+    "to fill it. Punchers launch whatever stops in front of them across the room. Clones copy every move the player makes. "
+    "The edges of the room are not passable."
+)
+
+
+def build_room_prompt(repr_="image", legend=None, view="perspective"):
+    """Prompt for a pre-rendered MazeBench room (twin of web/prompt.js buildRoomPrompt)."""
+    question = ('Can the player collect the gem, that is, does some sequence of moves end with the player on the gem? '
+                'Think it through, then end your reply with a single line that says exactly "ANSWER: YES" if the room is solvable or '
+                '"ANSWER: NO" if it is not.')
+    legend_text = ""
+    if legend:
+        legend_text = (" Each cell is drawn as a block of characters: the top rows show what is on top of the cell and the bottom row shows "
+                       "its side, so taller stacks are taller blocks. Legend: " +
+                       ", ".join(f'"{g}" = {legend[g]}' for g in sorted(legend)) + ".")
+    text = "This is one room from MazeBench, a 3D block-puzzle game. " + ROOM_RULES + " "
+    camera = " from directly above" if view == "top" else " from the game camera"
+    if repr_ == "ascii":
+        text += "The room is given below in the text form that agents playing the game receive." + legend_text + " "
+    elif repr_ == "both":
+        text += ("The image shows the room" + camera + ", and the same room is also given below in the text form that agents "
+                 "playing the game receive." + legend_text + " ")
+    else:
+        text += "The image shows the room" + camera + ". "
+    return text + question
+
+
 _ANSWER = re.compile(r"ANSWER:\s*(YES|NO)\b", re.I)
 
 

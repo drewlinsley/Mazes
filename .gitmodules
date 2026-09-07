@@ -1,0 +1,3 @@
+[submodule "vendor/MazeBenchEngine"]
+	path = vendor/MazeBenchEngine
+	url = https://github.com/mazebench/MazeBenchEngine

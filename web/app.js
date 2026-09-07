@@ -3,6 +3,8 @@
   'use strict';
 
   const $ = function (sel, root) { return (root || document).querySelector(sel); };
+  const buildPrompt = MazePrompt.buildPrompt;
+  const parseAnswer = MazePrompt.parseAnswer;
   const $$ = function (sel, root) { return Array.from((root || document).querySelectorAll(sel)); };
   const MAX_PX = 560;
 
@@ -13,8 +15,8 @@
     btn.addEventListener('click', function () {
       $$('.tab').forEach(function (b) { b.classList.toggle('active', b === btn); });
       $$('.tab-panel').forEach(function (p) { p.classList.toggle('active', p.id === 'tab-' + btn.dataset.tab); });
-      if (btn.dataset.tab === 'explore') renderExplore();
-      if (btn.dataset.tab === 'model') $('#model-prompt').textContent = buildPrompt(renderBase(), $('#model-repr').value);
+      if (btn.dataset.tab === 'explore') { if (sourceMode() === 'rooms') renderRooms(); else renderExplore(); }
+      if (btn.dataset.tab === 'model') $('#model-prompt').textContent = currentPrompt($('#model-repr').value);
     });
   });
 
@@ -37,9 +39,72 @@
     cfg[k].addEventListener('change', function () { cfg.preset.value = 'custom'; renderExplore(); });
   });
   ['style', 'theme', 'markers', 'wallPx', 'grayscale'].forEach(function (k) {
-    cfg[k].addEventListener('change', function () { renderExplore(); $('#model-prompt').textContent = buildPrompt(renderBase(), $('#model-repr').value); });
+    cfg[k].addEventListener('change', function () { renderExplore(); $('#model-prompt').textContent = currentPrompt($('#model-repr').value); });
   });
   applyPreset('medium');
+
+  /* ------------------------------------------------------------------ */
+  /* Stimulus source: generated mazes or pre-rendered MazeBench rooms      */
+  /* ------------------------------------------------------------------ */
+  const STIM = (window.MAZEBENCH_STIMULI && window.MAZEBENCH_STIMULI.sets) || {};
+  const src = { source: $('#source'), set: $('#rooms-set'), view: $('#rooms-view'), tag: $('#rooms-tag'), count: $('#rooms-count') };
+  function sourceMode() { return src.source.value === 'rooms' && Object.keys(STIM).length ? 'rooms' : 'maze'; }
+  function roomView() { return src.view.value; }
+  function roomItems() {
+    const set = STIM[src.set.value];
+    if (!set) return [];
+    const tag = src.tag.value;
+    return set.items.filter(function (it) { return !tag || (it.tags || []).indexOf(tag) >= 0; });
+  }
+  function roomPairs(items) {
+    const byPair = new Map();
+    (items || roomItems()).forEach(function (it) { if (!byPair.has(it.pair)) byPair.set(it.pair, []); byPair.get(it.pair).push(it); });
+    return Array.from(byPair.values()).filter(function (p) { return p.length === 2 && p[0].solvable !== p[1].solvable; })
+      .map(function (p) { return p[0].solvable ? p : [p[1], p[0]]; });
+  }
+  function roomImage(item) { return item.images[roomView()] || item.images.perspective || item.images.top || ''; }
+  function populateRoomSets() {
+    const keys = Object.keys(STIM);
+    src.set.innerHTML = keys.map(function (k) { return '<option value="' + k + '">' + (STIM[k].label || k) + '</option>'; }).join('');
+    if (!keys.length) { src.source.querySelector('option[value="rooms"]').disabled = true; src.source.querySelector('option[value="rooms"]').textContent = 'MazeBench rooms (no stimuli exported yet)'; }
+    refreshRoomTags();
+  }
+  function refreshRoomTags() {
+    const set = STIM[src.set.value];
+    const tags = new Set();
+    ((set && set.items) || []).forEach(function (it) { (it.tags || []).forEach(function (t) { tags.add(t); }); });
+    const current = src.tag.value;
+    src.tag.innerHTML = '<option value="">all rooms</option>' + Array.from(tags).sort().map(function (t) { return '<option value="' + t + '">' + t + '</option>'; }).join('');
+    src.tag.value = tags.has(current) ? current : '';
+    const pairs = roomPairs();
+    const rooms = new Set(pairs.map(function (p) { return p[0].room; }));
+    src.count.textContent = pairs.length + ' pairs from ' + rooms.size + ' rooms';
+  }
+  function applySourceMode() {
+    const rooms = sourceMode() === 'rooms';
+    $('#rooms-config').hidden = !rooms;
+    $('#maze-config').hidden = rooms;
+    $('#explore-rooms').hidden = !rooms;
+    $('#explore-maze').hidden = rooms;
+    $('#task-question').textContent = rooms ? 'Can the player collect the gem?' : 'Is there a path from S to G?';
+    $('#task-intro').innerHTML = rooms
+      ? 'Each trial shows one MazeBench room. Answer <b>solvable</b> if the player can collect the gem and <b>not solvable</b> if it cannot. Exactly half of the trials are solvable, and every room appears with its twin that differs by a single edit.'
+      : 'Each trial shows one maze. Answer <b>solvable</b> or <b>not solvable</b> as quickly and accurately as you can. Exactly half of the trials are solvable.';
+    $('#model-prompt').textContent = currentPrompt($('#model-repr').value);
+    if (rooms) renderRooms(); else renderExplore();
+  }
+  function currentPrompt(repr) {
+    if (sourceMode() === 'rooms') {
+      const items = roomItems();
+      return MazePrompt.buildRoomPrompt(repr, items.length ? items[0].legend : {}, roomView());
+    }
+    return buildPrompt(renderBase(), repr);
+  }
+  populateRoomSets();
+  src.source.addEventListener('change', applySourceMode);
+  src.set.addEventListener('change', function () { refreshRoomTags(); roomsIndex = 0; applySourceMode(); });
+  src.tag.addEventListener('change', function () { refreshRoomTags(); roomsIndex = 0; applySourceMode(); });
+  src.view.addEventListener('change', applySourceMode);
 
   function mazeParams() {
     return {
@@ -140,6 +205,18 @@
     if (!isNaN(s.medianRt)) html += stat('median RT (correct)', Math.round(s.medianRt) + ' ms');
     return html + (extra || '');
   }
+  /** Rooms: sample n/2 pairs, keep both members, shuffle. Returns trials with .item. */
+  function buildRoomTrials(n, sessionSeed) {
+    const rnd = MazeGen.mulberry32(MazeGen.normalizeSeed(sessionSeed));
+    const pairs = roomPairs();
+    rnd.shuffle(pairs);
+    const chosen = pairs.slice(0, Math.max(1, Math.min(pairs.length, Math.floor(n / 2))));
+    const trials = [];
+    chosen.forEach(function (p) { p.forEach(function (item) { trials.push({ item: item, solvable: item.solvable, seed: item.id }); }); });
+    rnd.shuffle(trials);
+    trials.forEach(function (t, i) { t.index = i; });
+    return trials;
+  }
   function buildTrials(n, sessionSeed) {
     const rnd = MazeGen.mulberry32(MazeGen.normalizeSeed(sessionSeed));
     const labels = [];
@@ -153,6 +230,13 @@
     const s = String(Date.now() % 1000000000);
     input.value = s;
     return s;
+  }
+  function roomRow(t) {
+    const it = t.item;
+    return {
+      trial: t.index, id: it.id, room: it.room, pair: it.pair, solvable: it.solvable ? 1 : 0, editType: it.edit ? it.edit.type : '',
+      tags: (it.tags || []).join('|'), moves: it.moves === null || it.moves === undefined ? '' : it.moves, baseMoves: it.baseMoves || '', view: roomView(), set: src.set.value
+    };
   }
   function trialRow(t, maze) {
     return {
@@ -177,7 +261,9 @@
   $('#task-start').addEventListener('click', function () {
     let n = Math.max(2, Math.round(Number($('#task-n').value) / 2) * 2);
     $('#task-n').value = n;
-    task.trials = buildTrials(n, sessionSeedFrom($('#task-seed')));
+    task.mode = sourceMode();
+    task.trials = task.mode === 'rooms' ? buildRoomTrials(n, sessionSeedFrom($('#task-seed'))) : buildTrials(n, sessionSeedFrom($('#task-seed')));
+    if (task.mode === 'rooms' && task.trials.length < n) $('#task-n').value = task.trials.length;
     task.i = 0; task.rows = []; task.feedback = $('#task-feedback').checked;
     task.stimMs = Number($('#task-stim').value) || 0; task.fixMs = Number($('#task-fix').value) || 0;
     showPanel('stage');
@@ -192,15 +278,29 @@
     if (task.i >= task.trials.length) { finishTask(); return; }
     const t = task.trials[task.i];
     $('#task-progress').textContent = 'Trial ' + (task.i + 1) + ' of ' + task.trials.length;
-    const maze = makeMaze(t.seed, t.solvable);
-    task.current = { trial: t, maze: maze };
-    MazeRender.draw(taskCanvas, maze, renderOpts(maze));
+    $('#task-mask').hidden = true;
+    const img = $('#task-image');
     const fix = $('#task-fixation');
     task.accepting = false;
-    if (task.fixMs > 0) {
-      fix.hidden = false;
-      task.timers.push(setTimeout(showStimulus, task.fixMs));
-    } else showStimulus();
+    fix.hidden = false;
+    let ready;
+    if (task.mode === 'rooms') {
+      taskCanvas.hidden = true; img.hidden = false;
+      task.current = { trial: t, item: t.item };
+      img.src = roomImage(t.item);
+      ready = (img.decode ? img.decode() : Promise.resolve()).catch(function () { });
+    } else {
+      taskCanvas.hidden = false; img.hidden = true;
+      const maze = makeMaze(t.seed, t.solvable);
+      task.current = { trial: t, maze: maze };
+      MazeRender.draw(taskCanvas, maze, renderOpts(maze));
+      ready = Promise.resolve();
+    }
+    const startedAt = performance.now();
+    ready.then(function () {
+      const remaining = Math.max(0, task.fixMs - (performance.now() - startedAt));
+      if (remaining > 0) task.timers.push(setTimeout(showStimulus, remaining)); else showStimulus();
+    });
   }
   function showStimulus() {
     $('#task-fixation').hidden = true;
@@ -210,13 +310,7 @@
     if (task.stimMs > 0) task.timers.push(setTimeout(maskStimulus, task.stimMs));
   }
   function maskStimulus() {
-    const ctx = taskCanvas.getContext('2d');
-    ctx.fillStyle = '#9a9a9a';
-    ctx.fillRect(0, 0, taskCanvas.width, taskCanvas.height);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold ' + Math.round(taskCanvas.height / 4) + 'px sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('?', taskCanvas.width / 2, taskCanvas.height / 2);
+    $('#task-mask').hidden = false;
     task.masked = true;
   }
   function respond(answerYes) {
@@ -225,7 +319,7 @@
     clearTimers();
     const rt = performance.now() - task.t0;
     const t = task.current.trial, maze = task.current.maze;
-    const row = trialRow(t, maze);
+    const row = task.mode === 'rooms' ? roomRow(t) : trialRow(t, maze);
     row.answer = answerYes ? 'yes' : 'no';
     row.correct = (answerYes === t.solvable) ? 1 : 0;
     row.rt = Math.round(rt);
@@ -235,9 +329,10 @@
     const box = $('#task-feedback-box');
     if (task.feedback) {
       box.hidden = false;
-      box.textContent = row.correct ? 'Correct' : ('Wrong — this maze was ' + (t.solvable ? 'solvable' : 'not solvable'));
+      box.textContent = row.correct ? 'Correct' : ('Wrong — this ' + (task.mode === 'rooms' ? 'room' : 'maze') + ' was ' + (t.solvable ? 'solvable' : 'not solvable'));
       box.className = 'feedback ' + (row.correct ? 'ok' : 'bad');
-      if (!row.correct) MazeRender.draw(taskCanvas, maze, renderOpts(maze, t.solvable ? 'solution' : 'components'));
+      if (!row.correct && task.mode !== 'rooms') MazeRender.draw(taskCanvas, maze, renderOpts(maze, t.solvable ? 'solution' : 'components'));
+      if (task.masked) $('#task-mask').hidden = true;
       task.timers.push(setTimeout(nextTrial, row.correct ? 500 : 1600));
     } else task.timers.push(setTimeout(nextTrial, 150));
   }
@@ -256,13 +351,13 @@
     const s = summarize(rows);
     $('#task-summary').innerHTML = statsHtml(s);
     const tbl = $('#task-table');
-    const cols = ['trial', 'seed', 'solvable', 'answer', 'correct', 'rt', 'treePathLength', 'pocketFrac'];
+    const cols = task.mode === 'rooms' ? ['trial', 'id', 'solvable', 'answer', 'correct', 'rt', 'editType', 'tags'] : ['trial', 'seed', 'solvable', 'answer', 'correct', 'rt', 'treePathLength', 'pocketFrac'];
     tbl.innerHTML = '<tr>' + cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '</tr>' +
       task.rows.map(function (r) { return '<tr>' + cols.map(function (c) { return '<td class="' + (c === 'correct' ? (r.correct ? 'ok' : 'bad') : '') + '">' + r[c] + '</td>'; }).join('') + '</tr>'; }).join('');
   }
   $('#task-export-csv').addEventListener('click', function () { download('maze-task-' + $('#task-seed').value + '.csv', csvOf(task.rows), 'text/csv'); });
   $('#task-export-json').addEventListener('click', function () {
-    download('maze-task-' + $('#task-seed').value + '.json', JSON.stringify({ sessionSeed: $('#task-seed').value, params: mazeParams(), render: renderBase(), stimulusMs: task.stimMs, fixationMs: task.fixMs, feedback: task.feedback, summary: summarize(task.rows.map(function (r) { return Object.assign({}, r, { solvable: !!r.solvable, correct: !!r.correct }); })), trials: task.rows }, null, 2), 'application/json');
+    download('maze-task-' + $('#task-seed').value + '.json', JSON.stringify({ sessionSeed: $('#task-seed').value, source: task.mode, roomSet: task.mode === 'rooms' ? src.set.value : null, roomView: task.mode === 'rooms' ? roomView() : null, params: mazeParams(), render: renderBase(), stimulusMs: task.stimMs, fixationMs: task.fixMs, feedback: task.feedback, summary: summarize(task.rows.map(function (r) { return Object.assign({}, r, { solvable: !!r.solvable, correct: !!r.correct }); })), trials: task.rows }, null, 2), 'application/json');
   });
 
   /* ------------------------------------------------------------------ */
@@ -324,25 +419,74 @@
   $('#explore-prompt-copy').addEventListener('click', function (e) { copyText(buildPrompt(renderBase(), 'image'), e.target); });
 
   /* ------------------------------------------------------------------ */
+  /* Explore: MazeBench room pairs                                        */
+  /* ------------------------------------------------------------------ */
+  let roomsIndex = 0;
+  function currentPair() {
+    const pairs = roomPairs();
+    if (!pairs.length) return null;
+    roomsIndex = ((roomsIndex % pairs.length) + pairs.length) % pairs.length;
+    return { pair: pairs[roomsIndex], n: pairs.length };
+  }
+  function roomCaption(it, reveal) {
+    const edit = it.edit ? it.edit.type.replace(/_/g, ' ') + ' at ' + it.edit.changes.map(function (c) { return '(' + c.x + ',' + c.y + ')'; }).join(' ') : '';
+    return (reveal ? (it.solvable ? 'solvable' : 'not solvable') + ' · ' : '') + it.id + (edit ? ' · ' + edit : '') + (reveal && it.moves ? ' · ' + it.moves + ' moves' : '');
+  }
+  function renderRooms() {
+    const cur = currentPair();
+    const reveal = $('#rooms-reveal').checked;
+    if (!cur) { $('#rooms-pos').textContent = 'no rooms in this set'; return; }
+    const a = cur.pair[0], b = cur.pair[1];
+    // present the pair in a stable but label-agnostic order: lower id first
+    const left = a.id < b.id ? a : b, right = left === a ? b : a;
+    $('#rooms-img-a').src = roomImage(left);
+    $('#rooms-img-b').src = roomImage(right);
+    $('#rooms-cap-a').textContent = roomCaption(left, reveal);
+    $('#rooms-cap-b').textContent = roomCaption(right, reveal);
+    $('#rooms-pos').textContent = 'pair ' + (roomsIndex + 1) + ' of ' + cur.n + ' · room ' + a.room + (a.world ? ' (world ' + a.world + ')' : '') + ' · ' + (a.tags || []).join(', ');
+    const meta = { pair: a.pair, room: a.room, world: a.world, tags: a.tags, baseMoves: a.baseMoves, generated: a.generated || null, left: { id: left.id, solvable: reveal ? left.solvable : '(hidden)', edit: left.edit, moves: reveal ? left.moves : '(hidden)' }, right: { id: right.id, solvable: reveal ? right.solvable : '(hidden)', edit: right.edit, moves: reveal ? right.moves : '(hidden)' }, legend: left.legend };
+    $('#rooms-meta').textContent = compactJson(meta);
+    $('#rooms-ascii').textContent = left.ascii || '';
+    renderRooms.left = left;
+  }
+  $('#rooms-prev').addEventListener('click', function () { roomsIndex--; renderRooms(); });
+  $('#rooms-next').addEventListener('click', function () { roomsIndex++; renderRooms(); });
+  $('#rooms-random').addEventListener('click', function () { roomsIndex = Math.floor(Math.random() * 1e9); renderRooms(); });
+  $('#rooms-reveal').addEventListener('change', renderRooms);
+  $('#rooms-json').addEventListener('click', function () { const cur = currentPair(); if (cur) download(cur.pair[0].pair + '.json', JSON.stringify(cur.pair, null, 1), 'application/json'); });
+  $('#rooms-ascii-copy').addEventListener('click', function (e) { if (renderRooms.left) copyText(renderRooms.left.ascii || '', e.target); });
+  $('#rooms-prompt-copy').addEventListener('click', function (e) { copyText(currentPrompt('image'), e.target); });
+
+  /* ------------------------------------------------------------------ */
   /* Model evaluation (direct browser -> Anthropic API)                   */
   /* ------------------------------------------------------------------ */
-  const buildPrompt = MazePrompt.buildPrompt;
-  const parseAnswer = MazePrompt.parseAnswer;
   const model = { running: false, rows: [], abort: null };
   const keyInput = $('#api-key');
   try { if (sessionStorage.getItem('maze-api-key')) { keyInput.value = sessionStorage.getItem('maze-api-key'); $('#api-remember').checked = true; } } catch (e) { /* storage blocked */ }
   $('#api-remember').addEventListener('change', function () { try { if ($('#api-remember').checked) sessionStorage.setItem('maze-api-key', keyInput.value); else sessionStorage.removeItem('maze-api-key'); } catch (e) { /* ignore */ } });
   keyInput.addEventListener('change', function () { try { if ($('#api-remember').checked) sessionStorage.setItem('maze-api-key', keyInput.value); } catch (e) { /* ignore */ } });
-  $('#model-repr').addEventListener('change', function () { $('#model-prompt').textContent = buildPrompt(renderBase(), $('#model-repr').value); });
+  $('#model-repr').addEventListener('change', function () { $('#model-prompt').textContent = currentPrompt($('#model-repr').value); });
 
-  async function askModel(maze, opts, signal) {
+  async function imageFileToBase64(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('could not load ' + url + ' (serve the site over HTTP to send room images)');
+    const blob = await res.blob();
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result).split(',')[1]); };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+  async function askModel(stimulus, opts, signal) {
     const content = [];
+    const item = stimulus.item, maze = stimulus.maze;
     if (opts.repr !== 'ascii') {
-      const dataUrl = MazeRender.toDataURL(maze, renderOpts(maze, null, 640));
-      content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: dataUrl.split(',')[1] } });
+      const data = item ? await imageFileToBase64(roomImage(item)) : MazeRender.toDataURL(maze, renderOpts(maze, null, 640)).split(',')[1];
+      content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: data } });
     }
-    let text = opts.prompt;
-    if (opts.repr !== 'image') text += '\n\n' + MazeGen.toAscii(maze);
+    let text = item ? MazePrompt.buildRoomPrompt(opts.repr, item.legend || {}, roomView()) : opts.prompt;
+    if (opts.repr !== 'image') text += '\n\n' + (item ? (item.ascii || '') : MazeGen.toAscii(maze));
     content.push({ type: 'text', text: text });
     const body = { model: opts.model, max_tokens: 16000, messages: [{ role: 'user', content: content }] };
     if (opts.effort) body.output_config = { effort: opts.effort };
@@ -359,7 +503,7 @@
     return { reply: reply, stopReason: json.stop_reason, usage: json.usage || {}, latency: latency, answer: json.stop_reason === 'refusal' ? 'refused' : parseAnswer(reply) };
   }
   function renderModelTable() {
-    const cols = ['trial', 'seed', 'solvable', 'answer', 'correct', 'latency', 'treePathLength', 'pocketFrac', 'reply'];
+    const cols = model.mode === 'rooms' ? ['trial', 'id', 'solvable', 'answer', 'correct', 'latency', 'editType', 'tags', 'reply'] : ['trial', 'seed', 'solvable', 'answer', 'correct', 'latency', 'treePathLength', 'pocketFrac', 'reply'];
     $('#model-table').innerHTML = '<tr>' + cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '</tr>' +
       model.rows.map(function (r) {
         return '<tr>' + cols.map(function (c) {
@@ -377,19 +521,20 @@
     if (!apiKey) { $('#model-status').textContent = 'Enter an API key first.'; return; }
     const n = Math.max(2, Math.round(Number($('#model-n').value) / 2) * 2);
     $('#model-n').value = n;
-    const opts = { apiKey: apiKey, model: $('#model-name').value, effort: $('#model-effort').value, repr: $('#model-repr').value, prompt: buildPrompt(renderBase(), $('#model-repr').value) };
+    model.mode = sourceMode();
+    const opts = { apiKey: apiKey, model: $('#model-name').value, effort: $('#model-effort').value, repr: $('#model-repr').value, prompt: currentPrompt($('#model-repr').value) };
     $('#model-prompt').textContent = opts.prompt;
-    const trials = buildTrials(n, sessionSeedFrom($('#model-seed')));
+    const trials = model.mode === 'rooms' ? buildRoomTrials(n, sessionSeedFrom($('#model-seed'))) : buildTrials(n, sessionSeedFrom($('#model-seed')));
     model.running = true; model.rows = []; model.abort = new AbortController();
     $('#model-run').disabled = true; $('#model-stop').disabled = false;
     renderModelTable();
     for (let i = 0; i < trials.length && model.running; i++) {
       const t = trials[i];
-      const maze = makeMaze(t.seed, t.solvable);
+      const maze = model.mode === 'rooms' ? null : makeMaze(t.seed, t.solvable);
       $('#model-status').textContent = 'Trial ' + (i + 1) + ' of ' + trials.length + '…';
-      const row = trialRow(t, maze);
+      const row = model.mode === 'rooms' ? roomRow(t) : trialRow(t, maze);
       try {
-        const r = await askModel(maze, opts, model.abort.signal);
+        const r = await askModel({ maze: maze, item: t.item }, opts, model.abort.signal);
         row.answer = r.answer; row.correct = (r.answer === 'yes') === t.solvable && (r.answer === 'yes' || r.answer === 'no') ? 1 : 0;
         row.latency = r.latency; row.reply = r.reply; row.stopReason = r.stopReason;
         row.inputTokens = r.usage.input_tokens; row.outputTokens = r.usage.output_tokens;
@@ -411,10 +556,10 @@
   $('#model-stop').addEventListener('click', function () { model.running = false; if (model.abort) model.abort.abort(); });
   $('#model-export-csv').addEventListener('click', function () { download('maze-model-' + $('#model-seed').value + '.csv', csvOf(model.rows), 'text/csv'); });
   $('#model-export-json').addEventListener('click', function () {
-    download('maze-model-' + $('#model-seed').value + '.json', JSON.stringify({ sessionSeed: $('#model-seed').value, model: $('#model-name').value, effort: $('#model-effort').value, representation: $('#model-repr').value, prompt: $('#model-prompt').textContent, params: mazeParams(), render: renderBase(), summary: summarize(model.rows.map(function (r) { return Object.assign({}, r, { solvable: !!r.solvable, correct: !!r.correct }); })), trials: model.rows }, null, 2), 'application/json');
+    download('maze-model-' + $('#model-seed').value + '.json', JSON.stringify({ sessionSeed: $('#model-seed').value, source: model.mode, roomSet: model.mode === 'rooms' ? src.set.value : null, roomView: model.mode === 'rooms' ? roomView() : null, model: $('#model-name').value, effort: $('#model-effort').value, representation: $('#model-repr').value, prompt: $('#model-prompt').textContent, params: mazeParams(), render: renderBase(), summary: summarize(model.rows.map(function (r) { return Object.assign({}, r, { solvable: !!r.solvable, correct: !!r.correct }); })), trials: model.rows }, null, 2), 'application/json');
   });
 
   // initial state
-  $('#model-prompt').textContent = buildPrompt(renderBase(), 'image');
-  window.MazeApp = { buildTrials: buildTrials, summarize: summarize, probit: probit, buildPrompt: buildPrompt, parseAnswer: parseAnswer, renderExplore: renderExplore };
+  applySourceMode();
+  window.MazeApp = { buildTrials: buildTrials, buildRoomTrials: buildRoomTrials, roomPairs: roomPairs, summarize: summarize, probit: probit, buildPrompt: buildPrompt, parseAnswer: parseAnswer, renderExplore: renderExplore, renderRooms: renderRooms };
 }());

@@ -22,6 +22,25 @@
 
 <main>
 <aside id="config" class="panel">
+  <h2>Stimuli</h2>
+  <label>Source
+    <select id="source">
+      <option value="maze" selected>generated 2D mazes</option>
+      <option value="rooms">MazeBench rooms (pre-rendered)</option>
+    </select>
+  </label>
+  <div id="rooms-config" hidden>
+    <label>Set <select id="rooms-set"></select></label>
+    <label>View
+      <select id="rooms-view">
+        <option value="perspective" selected>game camera (as agents see it)</option>
+        <option value="top">top-down</option>
+      </select>
+    </label>
+    <label>Mechanics <select id="rooms-tag"><option value="">all rooms</option></select></label>
+    <p class="hint" id="rooms-count"></p>
+  </div>
+  <div id="maze-config">
   <h2>Maze settings</h2>
   <label>Preset
     <select id="preset">
@@ -84,12 +103,13 @@
   </label>
   <label>Wall thickness (px) <input id="wallPx" type="number" min="1" max="40" value="4"></label>
   <label class="check"><input id="grayscale" type="checkbox"> grayscale</label>
+  </div>
 </aside>
 
 <section id="tab-task" class="tab-panel active">
   <div id="task-setup" class="panel">
     <h2>Run a block of trials</h2>
-    <p>Each trial shows one maze. Answer <b>solvable</b> or <b>not solvable</b> as quickly and accurately as you can. Exactly half of the trials are solvable.</p>
+    <p id="task-intro">Each trial shows one maze. Answer <b>solvable</b> or <b>not solvable</b> as quickly and accurately as you can. Exactly half of the trials are solvable.</p>
     <div class="row">
       <label>Trials <input id="task-n" type="number" min="2" max="1000" step="2" value="40"></label>
       <label>Session seed <input id="task-seed" type="text" placeholder="random" size="12"></label>
@@ -106,7 +126,8 @@
       <span id="task-progress"></span>
       <button id="task-abort" class="link">abort</button>
     </div>
-    <div class="canvas-wrap"><canvas id="task-canvas"></canvas><div id="task-fixation" class="fixation" hidden>+</div></div>
+    <p id="task-question" class="question">Is there a path from S to G?</p>
+    <div class="canvas-wrap"><canvas id="task-canvas"></canvas><img id="task-image" class="stim-image" alt="room" hidden><div id="task-mask" class="mask" hidden>?</div><div id="task-fixation" class="fixation" hidden>+</div></div>
     <div id="task-feedback-box" class="feedback" hidden></div>
     <div class="answer-buttons">
       <button id="btn-yes" class="answer yes">Solvable <kbd>F</kbd></button>
@@ -127,7 +148,29 @@
 </section>
 
 <section id="tab-explore" class="tab-panel">
-  <div class="panel">
+  <div id="explore-rooms" class="panel" hidden>
+    <h2>Explore MazeBench room pairs</h2>
+    <p class="hint">Each pair is one original room changed in two different places by the same kind of edit: one change leaves the gem collectable, the other does not. Labels come from the game engine's exhaustive solver.</p>
+    <div class="row">
+      <button id="rooms-prev">◀ prev</button>
+      <span id="rooms-pos" class="status"></span>
+      <button id="rooms-next">next ▶</button>
+      <button id="rooms-random">random</button>
+      <label class="check"><input id="rooms-reveal" type="checkbox" checked> show labels</label>
+    </div>
+    <div class="pair">
+      <figure><img id="rooms-img-a" class="stim-image" alt="room A"><figcaption id="rooms-cap-a"></figcaption></figure>
+      <figure><img id="rooms-img-b" class="stim-image" alt="room B"><figcaption id="rooms-cap-b"></figcaption></figure>
+    </div>
+    <div class="row">
+      <button id="rooms-json">Download pair JSON</button>
+      <button id="rooms-ascii-copy">Copy ASCII (left room)</button>
+      <button id="rooms-prompt-copy">Copy model prompt</button>
+    </div>
+    <details><summary>Edit and metadata</summary><pre id="rooms-meta"></pre></details>
+    <details><summary>ASCII observation (left room)</summary><pre id="rooms-ascii"></pre></details>
+  </div>
+  <div id="explore-maze" class="panel">
     <h2>Explore mazes and their minimal pairs</h2>
     <div class="row">
       <label>Seed <input id="explore-seed" type="text" value="1" size="14"></label>
@@ -234,6 +277,13 @@
       <li><b>Loops</b> add alternative routes and remove the dead-end texture of perfect mazes.</li>
       <li><b>Algorithm</b> changes the texture: backtracker gives long winding corridors, kruskal and prim give many short branches.</li>
     </ul>
+    <h2>MazeBench rooms</h2>
+    <p>The second stimulus source shows rooms from <a href="https://mazebench.com">MazeBench</a>, a 3D block-puzzle world in which agents steer a player one action at a time to collect gems. Here the same rooms become a snapshot judgment: can the player collect the gem? Every frame is drawn by the MazeBench engine itself, and every label comes from the engine's exhaustive solver, which either finds a move sequence that collects the gem or searches the whole reachable state space without one.</p>
+    <ul>
+      <li><b>Shipped rooms, one edit away</b>: a room from the MazeBench world with one wall, gem, box, slope, lift, ice or pit changed; its twin in the pair has the same kind of edit at a different cell and the opposite label.</li>
+      <li><b>Generated rooms</b>: mazes and open fields built from scratch with one mechanic each (ice, boxes, pits with floating floors, an orange wall opened by a box on its button), paired the same way.</li>
+    </ul>
+    <p>The rules a model is told, in the words of the game's own toolbox, are shown under <em>Prompt sent to the model</em> in the Model tab.</p>
     <h2>Reproducibility</h2>
     <p>Everything is seeded. The Python package in this repository (<code>mazes/</code>) reproduces the browser's mazes bit for bit from the same seed and parameters, so an image you look at here can be regenerated in a dataset with <code>scripts/make_dataset.py</code>, and model runs from <code>scripts/eval_model.py</code> use the same prompt as the Model tab.</p>
     <h2>Keys</h2>
@@ -245,6 +295,7 @@
 <script src="maze.js"></script>
 <script src="render.js"></script>
 <script src="prompt.js"></script>
+<script src="stimuli/mazebench/manifest.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

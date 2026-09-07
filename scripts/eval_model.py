@@ -41,7 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import mazes  # noqa: E402
 from mazes.prng import Mulberry32, normalize_seed  # noqa: E402
 from mazes.render import RenderOptions  # noqa: E402
-from mazes.prompt import build_prompt, parse_answer  # noqa: E402
+from mazes.prompt import build_prompt, build_room_prompt, parse_answer  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -62,6 +62,36 @@ def trials_from_generator(args, params):
         m = mazes.generate(dict(params, seed=t["seed"]), solvable=t["solvable"])
         items.append({"id": f"{t['index']:06d}", "maze": m, "image_path": None})
     return items, {"source": "generator", "session_seed": session, "maze_params": params}
+
+
+def trials_from_manifest(args):
+    """Pre-rendered MazeBench rooms written by mazebench/render.js (manifest.jsonl + images + ascii)."""
+    root = os.path.dirname(os.path.abspath(args.manifest))
+    items = []
+    with open(args.manifest) as f:
+        for line in f:
+            d = json.loads(line)
+            if args.tag and args.tag not in (d.get("tags") or []):
+                continue
+            image = (d.get("images") or {}).get(args.view)
+            ascii_path = os.path.join(root, d["ascii"]) if d.get("ascii") else None
+            items.append({
+                "id": d["id"], "maze": None, "room": d,
+                "image_path": os.path.join(root, image) if image else None,
+                "ascii": open(ascii_path).read() if ascii_path and os.path.exists(ascii_path) else None,
+            })
+    rnd = Mulberry32(normalize_seed(args.session_seed or 0))
+    # keep pairs together: sample pairs, then shuffle members
+    by_pair = {}
+    for it in items:
+        by_pair.setdefault(it["room"]["pair"], []).append(it)
+    pairs = [p for p in by_pair.values() if len(p) == 2 and p[0]["room"]["solvable"] != p[1]["room"]["solvable"]]
+    rnd.shuffle(pairs)
+    if args.limit:
+        pairs = pairs[: max(1, args.limit // 2)]
+    items = [it for p in pairs for it in p]
+    rnd.shuffle(items)
+    return items, {"source": "manifest", "manifest": args.manifest, "view": args.view, "tag": args.tag}
 
 
 def trials_from_dataset(args):
@@ -91,6 +121,8 @@ def trials_from_dataset(args):
 # API call
 # --------------------------------------------------------------------------
 def image_bytes(item, ropts):
+    if item.get("maze") is None and not (item.get("image_path") and os.path.exists(item["image_path"])):
+        raise FileNotFoundError(f"no {item['id']} image for this view; render it or choose another --view")
     if item["image_path"] and os.path.exists(item["image_path"]):
         with open(item["image_path"], "rb") as f:
             return f.read()
@@ -104,9 +136,9 @@ def build_content(item, ropts, repr_, prompt):
     if repr_ != "ascii":
         data = base64.standard_b64encode(image_bytes(item, ropts)).decode("ascii")
         content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}})
-    text = prompt
+    text = prompt if item.get("maze") is not None else build_room_prompt(repr_, item["room"].get("legend") or {}, item.get("view", "perspective"))
     if repr_ != "image":
-        text += "\n\n" + mazes.to_ascii(item["maze"])
+        text += "\n\n" + (mazes.to_ascii(item["maze"]) if item.get("maze") is not None else (item.get("ascii") or ""))
     content.append({"type": "text", "text": text})
     return content
 
@@ -198,6 +230,17 @@ def print_summary(rows):
         if sub:
             ss = summarize(sub)
             print(f"  {name:14s} n={len(sub):4d} accuracy {fmt(ss['accuracy'])} d' {fmt(ss['dprime'])}")
+    if any(r.get("edit_type") for r in rows):
+        print("by edit type (what differs from the original room):")
+        for et in sorted({r.get("edit_type") for r in rows if r.get("edit_type")}):
+            sub = [r for r in rows if r.get("edit_type") == et]
+            ss = summarize(sub)
+            print(f"  {et:14s} n={len(sub):4d} accuracy {fmt(ss['accuracy'])} d' {fmt(ss['dprime'])}")
+        tags = sorted({t for r in rows for t in (r.get("tags") or [])})
+        for t in tags:
+            sub = [r for r in rows if t in (r.get("tags") or [])]
+            ss = summarize(sub)
+            print(f"  tag {t:10s} n={len(sub):4d} accuracy {fmt(ss['accuracy'])} d' {fmt(ss['dprime'])}")
     lengths = sorted(r["tree_path_length"] for r in rows)
     if lengths:
         med = lengths[len(lengths) // 2]
@@ -213,6 +256,9 @@ def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     src = ap.add_argument_group("mazes (generate on the fly, or read a dataset)")
     src.add_argument("--dataset", help="directory written by scripts/make_dataset.py")
+    src.add_argument("--manifest", help="manifest.jsonl written by mazebench/render.js (pre-rendered MazeBench rooms)")
+    src.add_argument("--view", default="perspective", help="which rendered view to send for --manifest items (perspective | top)")
+    src.add_argument("--tag", default=None, help="only --manifest rooms carrying this mechanics tag (ice, box, holes, orange, slope, lift, elevation)")
     src.add_argument("--split", default=None, help="dataset split to use (train/val/test); default all")
     src.add_argument("--limit", type=int, default=0, help="balanced number of dataset items to score (0 = all)")
     src.add_argument("--preset", choices=sorted(mazes.PRESETS), default="medium")
@@ -248,7 +294,12 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    if args.dataset:
+    if args.manifest:
+        items, source = trials_from_manifest(args)
+        for it in items:
+            it["view"] = args.view
+        ropts = RenderOptions()
+    elif args.dataset:
         items, source = trials_from_dataset(args)
         rconf = source["dataset_config"].get("render", {})
         ropts = RenderOptions(**{k: v for k, v in rconf.items() if k in RenderOptions.__dataclass_fields__})
@@ -273,12 +324,21 @@ def main(argv=None):
     if args.save_images:
         os.makedirs(args.save_images, exist_ok=True)
 
-    print(f"{len(items)} mazes ({sum(i['maze'].solvable for i in items)} solvable), model {args.model}, "
+    n_solvable = sum((i["maze"].solvable if i.get("maze") is not None else i["room"]["solvable"]) for i in items)
+    print(f"{len(items)} items ({n_solvable} solvable), model {args.model}, "
           f"input {args.representation}, effort {args.effort or 'default'} -> {out}")
     print("prompt:", prompt, "\n")
 
     def row_for(item):
         m = item["maze"]
+        if m is None:
+            r = item["room"]
+            return {
+                "id": item["id"], "seed": None, "solvable": r["solvable"], "room": r.get("room"), "pair": r.get("pair"),
+                "edit_type": (r.get("edit") or {}).get("type"), "tags": r.get("tags"), "tree_path_length": r.get("moves") or r.get("baseMoves") or 0,
+                "solution_length": r.get("moves"), "pocket_frac": 0.5, "params": None, "model": args.model, "effort": args.effort,
+                "representation": args.representation, "view": item.get("view"),
+            }
         return {
             "id": item["id"], "seed": m.seed, "solvable": m.solvable, "width": m.width, "height": m.height,
             "tree_path_length": m.meta["treePathLength"], "solution_length": m.meta["solutionLength"],
@@ -293,7 +353,8 @@ def main(argv=None):
                 with open(os.path.join(args.save_images, item["id"] + ".png"), "wb") as f:
                     f.write(image_bytes(item, ropts))
             text = [c["text"] for c in content if c["type"] == "text"][0]
-            print(f"--- {item['id']} seed {item['maze'].seed} solvable={item['maze'].solvable} "
+            truth = item["maze"].solvable if item.get("maze") is not None else item["room"]["solvable"]
+            print(f"--- {item['id']} solvable={truth} "
                   f"blocks={[c['type'] for c in content]}\n{text}\n")
         print("dry run: no API calls made")
         return
@@ -313,7 +374,8 @@ def main(argv=None):
             row.update(answer="error", correct=False, error=r["error"], latency=r["latency"])
         else:
             row.update(r)
-            row["correct"] = r["answer"] in ("yes", "no") and (r["answer"] == "yes") == item["maze"].solvable
+            truth = item["maze"].solvable if item.get("maze") is not None else item["room"]["solvable"]
+            row["correct"] = r["answer"] in ("yes", "no") and (r["answer"] == "yes") == truth
         return row
 
     rows = []

@@ -20,5 +20,6 @@ process.stdout.write(JSON.stringify({
   prompts: [['image', {markers: 'sg', grayscale: false, theme: 'light'}], ['ascii', {markers: 'sg', grayscale: false, theme: 'light'}],
             ['both', {markers: 'dots', grayscale: false, theme: 'dark'}], ['image', {markers: 'sg', grayscale: true, theme: 'light'}],
             ['image', {markers: 'letters', grayscale: false, theme: 'dark'}]].map(function (x) { return P.buildPrompt(x[1], x[0]); }),
+  roomPrompts: [P.buildRoomPrompt('image', {}, 'perspective'), P.buildRoomPrompt('ascii', {'W': 'wall', 'P': 'player', 'G': 'gem'}, 'top'), P.buildRoomPrompt('both', {'I': 'ice'}, 'top')],
   parsed: ['blah\nANSWER: NO', 'yes it is.\nANSWER: YES', 'I think no', 'unclear', 'ANSWER: yes\nANSWER: no', '', 'Yes and no'].map(P.parseAnswer)
 }));
