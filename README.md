@@ -42,8 +42,19 @@ package, so a maze looked at on the website can be regenerated in a dataset.
 
 ## Quick start
 
-Open `web/index.html` in a browser (it works from a local file, no server needed;
-`index.html` at the repo root redirects there so GitHub Pages can serve the repo root).
+Open `web/index.html` in a browser (it works from a local file, no server needed).
+`web/examples.html` is a gallery of labelled examples: MazeBench rooms from mixed
+camera rotations with their solvable / not-solvable labels, each opening to all four
+rotations and the room's twin, plus 2D mazes.
+
+**GitHub Pages.** `.github/workflows/pages.yml` publishes the root redirect, `web/`
+and `docs/` on every push to `main` or to this branch. Enable it once under
+*Settings → Pages → Build and deployment → Source: GitHub Actions* (the workflow
+also tries to enable it itself). The site then lives at
+`https://drewlinsley.github.io/Mazes/` with the gallery at
+`https://drewlinsley.github.io/Mazes/web/examples.html`.
+`scripts/build_examples_page.py` bundles the gallery into one self-contained
+HTML file for hosting anywhere else.
 
 ```bash
 pip install -r requirements.txt

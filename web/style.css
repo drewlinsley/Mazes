@@ -12,6 +12,7 @@ header h1 { margin: 0 0 4px; font-size: 24px; }
 header p { margin: 0 0 12px; color: var(--muted); }
 .s { color: var(--yes); font-weight: 700; } .g { color: var(--no); font-weight: 700; }
 .tabs { display: flex; gap: 4px; }
+a.tab { text-decoration: none; display: inline-block; line-height: 1.2; }
 .tab { border: 1px solid var(--line); border-bottom: none; background: var(--bg); color: var(--muted); padding: 8px 16px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 15px; }
 .tab.active { background: var(--panel); color: var(--ink); font-weight: 600; position: relative; top: 1px; }
 main { display: grid; grid-template-columns: 280px 1fr; gap: 20px; padding: 20px 24px; max-width: 1400px; margin: 0 auto; }

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solvable or Not</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* dark first: the frames are drawn on the game's void; the page is the same ground */
+  :root {
+    --bg: #0b0e14; --surface: #121722; --surface-2: #1a2130; --line: #273044; --line-strong: #3a4660;
+    --ink: #e9edf5; --muted: #9aa6bd; --faint: #6b7791;
+    --floor: #d9c39a; --ice: #a9d3f0;
+    --yes: #2fd3b9; --yes-ink: #06231d; --no: #f28c4a; --no-ink: #2a1200;
+    --focus: #a9d3f0;
+    --display: "Chakra Petch", "IBM Plex Sans", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f3f1ec; --surface: #ffffff; --surface-2: #ebe7de; --line: #d8d3c7; --line-strong: #b9b2a2;
+      --ink: #191c24; --muted: #59627a; --faint: #8b93a8;
+      --floor: #8a6f3c; --ice: #3f7fb5;
+      --yes: #0f8f7a; --yes-ink: #ffffff; --no: #c2570f; --no-ink: #ffffff; --focus: #3f7fb5;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f1ec; --surface: #ffffff; --surface-2: #ebe7de; --line: #d8d3c7; --line-strong: #b9b2a2;
+    --ink: #191c24; --muted: #59627a; --faint: #8b93a8;
+    --floor: #8a6f3c; --ice: #3f7fb5;
+    --yes: #0f8f7a; --yes-ink: #ffffff; --no: #c2570f; --no-ink: #ffffff; --focus: #3f7fb5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
+  a { color: var(--ice); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 0 24px; }
+
+  header.top { padding: 40px 0 22px; border-bottom: 1px solid var(--line); }
+  .eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--floor); }
+  h1 { font: 700 40px/1.05 var(--display); letter-spacing: .01em; margin: 10px 0 12px; text-wrap: balance; }
+  .lede { max-width: 66ch; color: var(--muted); margin: 0; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 16px 0 0; }
+  .controls label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .controls select, .controls button { font: 500 13px var(--body); color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 10px; }
+  .controls button { cursor: pointer; }
+  .controls button:hover { border-color: var(--ice); }
+  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .switch input { accent-color: var(--ice); width: 16px; height: 16px; margin: 0; }
+  .count { font: 400 13px var(--mono); color: var(--faint); margin-left: auto; }
+
+  section { padding: 26px 0 10px; }
+  h2 { font: 600 22px/1.2 var(--display); margin: 0 0 6px; }
+  .section-note { color: var(--muted); max-width: 70ch; margin: 0 0 16px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 18px 16px; }
+  .card { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .frame { display: block; width: 100%; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: #0b0e14; cursor: pointer; overflow: hidden; aspect-ratio: 1 / 1; }
+  .frame img, .frame canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .frame:hover { border-color: var(--line-strong); }
+  .strip { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .badge { font: 600 12px/1 var(--body); letter-spacing: .02em; padding: 5px 9px; border-radius: 999px; white-space: nowrap; }
+  .badge.yes { background: var(--yes); color: var(--yes-ink); }
+  .badge.no { background: var(--no); color: var(--no-ink); }
+  .badge.hidden { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--line-strong); cursor: pointer; }
+  .chip { font: 400 12px var(--mono); color: var(--muted); }
+  figcaption { font-size: 12.5px; color: var(--muted); line-height: 1.4; overflow-wrap: anywhere; }
+  figcaption .id { font-family: var(--mono); color: var(--ink); }
+
+  dialog { width: min(1120px, calc(100vw - 32px)); max-height: calc(100vh - 32px); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); padding: 0; }
+  dialog::backdrop { background: rgba(4, 6, 10, .78); }
+  .d-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 18px 22px 10px; border-bottom: 1px solid var(--line); }
+  .d-head h3 { font: 600 18px/1.2 var(--display); margin: 0; }
+  .d-head button { font: 500 13px var(--body); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  .d-body { padding: 16px 22px 22px; display: grid; gap: 18px; }
+  .d-row h4 { font: 500 12px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--floor); margin: 0 0 10px; display: flex; align-items: center; gap: 12px; }
+  .angles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  .angles figure { margin: 0; }
+  .angles img { display: block; width: 100%; aspect-ratio: 1/1; object-fit: contain; background: #0b0e14; border: 1px solid var(--line); border-radius: 4px; }
+  .angles figcaption { font: 400 12px var(--mono); color: var(--muted); margin-top: 4px; }
+  .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; color: var(--muted); margin: 0; }
+  .facts dt { font: 500 12px var(--mono); color: var(--faint); align-self: baseline; }
+  .facts dd { margin: 0; color: var(--ink); }
+  pre.ascii { font: 400 11px/1.2 var(--mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 10px; overflow: auto; max-height: 360px; margin: 0; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 30px; padding: 22px 0 40px; color: var(--muted); font-size: 13.5px; }
+  footer p { max-width: 78ch; margin: 0 0 8px; }
+  @media (max-width: 640px) { h1 { font-size: 30px; } .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px 12px; } }
+  @media (prefers-reduced-motion: no-preference) { .frame { transition: border-color .15s; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow">MazeBench snapshot task</div>
+    <h1>Solvable or Not</h1>
+    <p class="lede">Every card is one MazeBench room, drawn by the game's own renderer from one of four camera rotations. In half of the rooms the green player can reach the gem; in the other half it cannot. Each room has a <b>twin</b> that differs by a single edit and carries the opposite label, and every label comes from the engine's exhaustive solver. Open a card to see all rotations and the twin.</p>
+    <div class="controls">
+      <label>Rooms <select id="f-set"><option value="">world and generated</option></select></label>
+      <label>Mechanics <select id="f-tag"><option value="">any</option></select></label>
+      <label>Camera <select id="f-angle"><option value="mix">mixed rotations</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
+      <label class="switch"><input id="f-labels" type="checkbox" checked> show labels</label>
+      <button id="shuffle" type="button">Shuffle</button>
+      <span class="count" id="count"></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="rooms">
+    <div class="grid" id="grid" aria-live="polite"></div>
+  </section>
+  <section id="mazes">
+    <h2>The same question on 2D mazes</h2>
+    <p class="section-note">Generated in the browser from a seed. Each pair has the same walls except at two segments: one keeps a path from S to G, the other does not. Camera rotation does not apply here.</p>
+    <div class="grid" id="maze-grid"></div>
+  </section>
+</main>
+
+<dialog id="detail" aria-labelledby="d-title">
+  <div class="d-head"><h3 id="d-title"></h3><button type="button" id="d-close">Close</button></div>
+  <div class="d-body" id="d-body"></div>
+</dialog>
+
+<footer>
+  <div class="wrap">
+    <p><b>Where the labels come from.</b> A room counts as solvable when the MazeBench engine's A* search finds a move sequence that collects the gem, and as unsolvable when the search has visited every reachable state without finding one. Rooms whose search exceeds its budget are left out. World rooms are the benchmark's own rooms with one wall, gem, box, slope, lift, ice or pit changed; generated rooms are built from scratch with one mechanic each.</p>
+    <p>Rotations are the game camera turned in 90° steps, as an agent turns it. Tall walls can hide the gem from one side, which is why the mix matters. <a href="index.html">Run the task</a> · <a href="https://github.com/drewlinsley/Mazes">Code and pipeline</a></p>
+  </div>
+</footer>
+
+<script src="maze.js"></script>
+<script src="render.js"></script>
+<script src="stimuli/mazebench/manifest.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = (s, r) => (r || document).querySelector(s);
+  const SETS = (window.MAZEBENCH_STIMULI && window.MAZEBENCH_STIMULI.sets) || {};
+  const SET_LABELS = { shipped: 'world rooms', generated: 'generated rooms' };
+  const items = [];
+  Object.keys(SETS).forEach((k) => SETS[k].items.forEach((it) => items.push(Object.assign({ set: k }, it))));
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const twinOf = (it) => items.find((o) => o.pair === it.pair && o.id !== it.id);
+  const yawsOf = (it) => it.images && it.images.yaws ? Object.keys(it.images.yaws).map(Number).sort((a, b) => a - b) : [0];
+  const imageAt = (it, yaw) => (it.images.yaws && it.images.yaws[String(yaw)]) || it.images.perspective || '';
+  const editText = (it) => it.edit ? it.edit.type.replace(/_/g, ' ') + ' at ' + it.edit.changes.map((c) => '(' + c.x + ',' + c.y + ')').join(' ') : '';
+  const labelText = (it) => it.solvable ? 'solvable' : 'not solvable';
+
+  // controls
+  const fSet = $('#f-set'), fTag = $('#f-tag'), fAngle = $('#f-angle'), fLabels = $('#f-labels');
+  Object.keys(SETS).forEach((k) => { const o = document.createElement('option'); o.value = k; o.textContent = SET_LABELS[k] || SETS[k].label || k; fSet.appendChild(o); });
+  const tags = new Set(); items.forEach((it) => (it.tags || []).forEach((t) => tags.add(t)));
+  Array.from(tags).sort().forEach((t) => { const o = document.createElement('option'); o.value = t; o.textContent = t; fTag.appendChild(o); });
+  let shuffleSeed = 7;
+  const revealed = new Set();
+
+  function selection() {
+    const rnd = MazeGen.mulberry32(shuffleSeed);
+    const angle = fAngle.value;
+    let list = items.filter((it) => (!fSet.value || it.set === fSet.value) && (!fTag.value || (it.tags || []).includes(fTag.value)));
+    // keep pairs adjacent-but-apart: shuffle, then assign a camera per card
+    rnd.shuffle(list);
+    const out = [];
+    for (const it of list) {
+      const yaws = yawsOf(it);
+      let yaw;
+      if (angle === 'mix') yaw = yaws[rnd.int(yaws.length)];
+      else { yaw = Number(angle); if (!yaws.includes(yaw)) continue; }
+      out.push({ it, yaw });
+    }
+    return out;
+  }
+
+  function card(entry) {
+    const it = entry.it;
+    const fig = document.createElement('figure');
+    fig.className = 'card';
+    const show = fLabels.checked || revealed.has(it.id);
+    fig.innerHTML =
+      '<button class="frame" type="button" aria-label="Open room ' + it.id + '"><img loading="lazy" alt="MazeBench room ' + it.room + ' from camera rotation ' + entry.yaw + ' degrees" src="' + imageAt(it, entry.yaw) + '"></button>' +
+      '<div class="strip">' + (show ? '<span class="badge ' + (it.solvable ? 'yes' : 'no') + '">' + labelText(it) + '</span>' : '<button type="button" class="badge hidden">reveal</button>') +
+      '<span class="chip">camera ' + entry.yaw + '°</span></div>' +
+      '<figcaption><span class="id">' + it.id + '</span> · ' + (it.tags && it.tags.length ? it.tags.join(', ') : 'walls only') + (it.edit ? ' · ' + it.edit.type.replace(/_/g, ' ') : '') + '</figcaption>';
+    fig.querySelector('.frame').addEventListener('click', () => openDetail(it, entry.yaw));
+    const hid = fig.querySelector('.badge.hidden');
+    if (hid) hid.addEventListener('click', () => { revealed.add(it.id); render(); });
+    return fig;
+  }
+
+  function render() {
+    const grid = $('#grid');
+    grid.innerHTML = '';
+    const sel = selection();
+    sel.forEach((e) => grid.appendChild(card(e)));
+    const pairs = new Set(sel.map((e) => e.it.pair)).size;
+    $('#count').textContent = sel.length + ' rooms · ' + pairs + ' pairs · ' + sel.filter((e) => e.it.solvable).length + ' solvable';
+  }
+
+  function openDetail(it, yaw) {
+    const twin = twinOf(it);
+    const show = fLabels.checked || revealed.has(it.id);
+    $('#d-title').textContent = 'Room ' + it.room + (it.world ? ' · world slot ' + it.world : '') + ' · pair ' + it.pair;
+    const anglesHtml = (x) => '<div class="angles">' + yawsOf(x).map((y) => '<figure><img alt="camera ' + y + '°" src="' + imageAt(x, y) + '"><figcaption>camera ' + y + '°' + (y === yaw && x === it ? ' · shown on the card' : '') + '</figcaption></figure>').join('') + '</div>';
+    const facts = (x) => '<dl class="facts">' +
+      '<dt>label</dt><dd>' + (show ? '<span class="badge ' + (x.solvable ? 'yes' : 'no') + '">' + labelText(x) + '</span>' + (x.solvable && x.moves ? ' · shortest solution ' + x.moves + ' moves' : '') : '<em>hidden</em>') + '</dd>' +
+      '<dt>edit</dt><dd>' + (editText(x) || '—') + '</dd>' +
+      '<dt>mechanics</dt><dd>' + ((x.tags || []).join(', ') || 'walls only') + '</dd>' +
+      '<dt>id</dt><dd><span class="id" style="font-family:var(--mono)">' + x.id + '</span></dd></dl>';
+    let html = '<div class="d-row"><h4>This room, all rotations</h4>' + anglesHtml(it) + '</div><div class="d-row">' + facts(it) + '</div>';
+    if (twin) {
+      html += '<div class="d-row"><h4>Its twin: same room, the edit elsewhere</h4>' + anglesHtml(twin) + '</div><div class="d-row">' + facts(twin) + '</div>';
+    }
+    if (it.ascii) html += '<details><summary>ASCII observation of this room, as text-mode agents receive it</summary><pre class="ascii">' + it.ascii.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></details>';
+    $('#d-body').innerHTML = html;
+    const dlg = $('#detail');
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+  }
+  $('#d-close').addEventListener('click', () => $('#detail').close());
+  $('#detail').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+
+  [fSet, fTag, fAngle, fLabels].forEach((el) => el.addEventListener('change', render));
+  $('#shuffle').addEventListener('click', () => { shuffleSeed = (shuffleSeed * 7919 + 13) % 4294967296; render(); });
+  render();
+
+  // 2D mazes: eight pairs, both members shown
+  const mg = $('#maze-grid');
+  for (let i = 0; i < 8; i++) {
+    const pair = MazeGen.generatePair(Object.assign({}, MazeGen.PRESETS.medium, { seed: 1000 + i }));
+    [pair.positive, pair.negative].forEach((m) => {
+      const fig = document.createElement('figure');
+      fig.className = 'card';
+      const frame = document.createElement('div');
+      frame.className = 'frame';
+      frame.style.cursor = 'default';
+      const canvas = document.createElement('canvas');
+      frame.appendChild(canvas);
+      MazeRender.draw(canvas, m, { cellPx: 20, wallPx: 3, margin: 8, theme: 'dark', markers: 'sg' });
+      fig.appendChild(frame);
+      const strip = document.createElement('div');
+      strip.className = 'strip';
+      strip.innerHTML = (fLabels.checked ? '<span class="badge ' + (m.solvable ? 'yes' : 'no') + '">' + (m.solvable ? 'solvable' : 'not solvable') + '</span>' : '<span class="badge hidden">hidden</span>') + '<span class="chip">seed ' + m.seed + '</span>';
+      fig.appendChild(strip);
+      const cap = document.createElement('figcaption');
+      cap.innerHTML = '10×10 · ' + (m.solvable ? 'path of ' + m.meta.solutionLength + ' cells' : 'the two parts hold ' + m.meta.componentSizes.join(' and ') + ' cells');
+      fig.appendChild(cap);
+      mg.appendChild(fig);
+    });
+  }
+  fLabels.addEventListener('change', () => { mg.querySelectorAll('.strip').forEach((s, k) => { const m = k % 2 === 0; }); });
+}());
+</script>
+</body>
+</html>
