@@ -69,8 +69,18 @@
     if (!keys.length) { src.source.querySelector('option[value="rooms"]').disabled = true; src.source.querySelector('option[value="rooms"]').textContent = 'MazeBench rooms (no stimuli exported yet)'; }
     refreshRoomTags();
   }
+  function refreshRoomViews() {
+    const set = STIM[src.set.value];
+    const views = (set && set.views && set.views.length) ? set.views : ['perspective'];
+    const labels = { perspective: 'game camera (as agents see it)', top: 'top-down' };
+    const current = src.view.value;
+    src.view.innerHTML = views.map(function (v) { return '<option value="' + v + '">' + (labels[v] || v) + '</option>'; }).join('');
+    src.view.value = views.indexOf(current) >= 0 ? current : views[0];
+    src.view.disabled = views.length < 2;
+  }
   function refreshRoomTags() {
     const set = STIM[src.set.value];
+    refreshRoomViews();
     const tags = new Set();
     ((set && set.items) || []).forEach(function (it) { (it.tags || []).forEach(function (t) { tags.add(t); }); });
     const current = src.tag.value;
@@ -87,6 +97,9 @@
     $('#explore-rooms').hidden = !rooms;
     $('#explore-maze').hidden = rooms;
     $('#task-question').textContent = rooms ? 'Can the player collect the gem?' : 'Is there a path from S to G?';
+    $('#tagline').innerHTML = rooms
+      ? 'Half of the MazeBench rooms let the player reach the gem, half do not. Decide from a single snapshot.'
+      : 'Half of the mazes have a path from <span class="s">S</span> to <span class="g">G</span>, half do not. Decide from a single snapshot.';
     $('#task-intro').innerHTML = rooms
       ? 'Each trial shows one MazeBench room. Answer <b>solvable</b> if the player can collect the gem and <b>not solvable</b> if it cannot. Exactly half of the trials are solvable, and every room appears with its twin that differs by a single edit.'
       : 'Each trial shows one maze. Answer <b>solvable</b> or <b>not solvable</b> as quickly and accurately as you can. Exactly half of the trials are solvable.';
