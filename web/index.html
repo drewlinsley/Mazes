@@ -34,10 +34,11 @@
     <label>Set <select id="rooms-set"></select></label>
     <label>View
       <select id="rooms-view">
-        <option value="perspective" selected>game camera (as agents see it)</option>
-        <option value="top">top-down</option>
+        <option value="top">overhead map (easier)</option>
+        <option value="perspective" selected>game camera (harder, as agents see it)</option>
       </select>
     </label>
+    <p class="hint">The overhead map shows every cell; the game camera hides cells behind tall walls and can be rotated.</p>
     <label>Mechanics <select id="rooms-tag"><option value="">all rooms</option></select></label>
     <p class="hint" id="rooms-count"></p>
   </div>

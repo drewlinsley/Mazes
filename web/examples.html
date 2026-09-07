@@ -101,10 +101,11 @@
   <div class="wrap">
     <div class="eyebrow">MazeBench snapshot task</div>
     <h1>Solvable or Not</h1>
-    <p class="lede">Every card is one MazeBench room, drawn by the game's own renderer from one of four camera rotations. In half of the rooms the green player can reach the gem; in the other half it cannot. Each room has a <b>twin</b> that differs by a single edit and carries the opposite label, and every label comes from the engine's exhaustive solver. Open a card to see all rotations and the twin.</p>
+    <p class="lede">Every card is one MazeBench room drawn by the game's own renderer, either as the <b>overhead map</b> (the easier tier: every cell is visible) or from the <b>game camera</b> at one of four rotations (the harder tier: tall walls hide cells, as they do for agents). In half of the rooms the green player can reach the gem; in the other half it cannot. Each room has a <b>twin</b> that differs by a single edit and carries the opposite label, and every label comes from the engine's exhaustive solver. Open a card to see both tiers, all rotations and the twin.</p>
     <div class="controls">
       <label>Rooms <select id="f-set"><option value="">world and generated</option></select></label>
       <label>Mechanics <select id="f-tag"><option value="">any</option></select></label>
+      <label>View <select id="f-view"><option value="mix">mixed tiers</option><option value="top">overhead map (easier)</option><option value="perspective">game camera (harder)</option></select></label>
       <label>Camera <select id="f-angle"><option value="mix">mixed rotations</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
       <label class="switch"><input id="f-labels" type="checkbox" checked> show labels</label>
       <button id="shuffle" type="button">Shuffle</button>
@@ -132,7 +133,7 @@
 <footer>
   <div class="wrap">
     <p><b>Where the labels come from.</b> A room counts as solvable when the MazeBench engine's A* search finds a move sequence that collects the gem, and as unsolvable when the search has visited every reachable state without finding one. Rooms whose search exceeds its budget are left out. World rooms are the benchmark's own rooms with one wall, gem, box, slope, lift, ice or pit changed; generated rooms are built from scratch with one mechanic each.</p>
-    <p>Rotations are the game camera turned in 90° steps, as an agent turns it. Tall walls can hide the gem from one side, which is why the mix matters. <a href="index.html">Run the task</a> · <a href="https://github.com/drewlinsley/Mazes">Code and pipeline</a></p>
+    <p>The overhead map is the room-preview camera looking straight down: nothing is hidden, so it is the easier tier. The game camera is what agents see, turned in 90° steps as an agent turns it; tall walls hide cells and can hide the gem, so it is the harder tier and the mix of rotations matters. <a href="index.html">Run the task</a> · <a href="https://github.com/drewlinsley/Mazes">Code and pipeline</a></p>
   </div>
 </footer>
 
@@ -151,11 +152,13 @@
   const twinOf = (it) => items.find((o) => o.pair === it.pair && o.id !== it.id);
   const yawsOf = (it) => it.images && it.images.yaws ? Object.keys(it.images.yaws).map(Number).sort((a, b) => a - b) : [0];
   const imageAt = (it, yaw) => (it.images.yaws && it.images.yaws[String(yaw)]) || it.images.perspective || '';
+  const hasTop = (it) => !!(it.images && it.images.top);
+  const TIER = { top: 'overhead · easier', perspective: 'game camera · harder' };
   const editText = (it) => it.edit ? it.edit.type.replace(/_/g, ' ') + ' at ' + it.edit.changes.map((c) => '(' + c.x + ',' + c.y + ')').join(' ') : '';
   const labelText = (it) => it.solvable ? 'solvable' : 'not solvable';
 
   // controls
-  const fSet = $('#f-set'), fTag = $('#f-tag'), fAngle = $('#f-angle'), fLabels = $('#f-labels');
+  const fSet = $('#f-set'), fTag = $('#f-tag'), fAngle = $('#f-angle'), fView = $('#f-view'), fLabels = $('#f-labels');
   Object.keys(SETS).forEach((k) => { const o = document.createElement('option'); o.value = k; o.textContent = SET_LABELS[k] || SETS[k].label || k; fSet.appendChild(o); });
   const tags = new Set(); items.forEach((it) => (it.tags || []).forEach((t) => tags.add(t)));
   Array.from(tags).sort().forEach((t) => { const o = document.createElement('option'); o.value = t; o.textContent = t; fTag.appendChild(o); });
@@ -172,10 +175,15 @@
     const out = [];
     for (const it of list) {
       const yaws = yawsOf(it);
-      let yaw;
-      if (angle === 'mix') yaw = yaws[rnd.int(yaws.length)];
-      else { yaw = Number(angle); if (!yaws.includes(yaw)) continue; }
-      out.push({ it, yaw });
+      let view = fView.value;
+      if (view === 'mix') view = hasTop(it) && rnd() < 0.4 ? 'top' : 'perspective';
+      if (view === 'top' && !hasTop(it)) continue;
+      let yaw = 0;
+      if (view === 'perspective') {
+        if (angle === 'mix') yaw = yaws[rnd.int(yaws.length)];
+        else { yaw = Number(angle); if (!yaws.includes(yaw)) continue; }
+      }
+      out.push({ it, yaw, view });
     }
     return out;
   }
@@ -185,10 +193,12 @@
     const fig = document.createElement('figure');
     fig.className = 'card';
     const show = fLabels.checked || revealed.has(it.id);
+    const src = entry.view === 'top' ? it.images.top : imageAt(it, entry.yaw);
+    const chip = entry.view === 'top' ? TIER.top : TIER.perspective + ' · ' + entry.yaw + '°';
     fig.innerHTML =
-      '<button class="frame" type="button" aria-label="Open room ' + it.id + '"><img loading="lazy" alt="MazeBench room ' + it.room + ' from camera rotation ' + entry.yaw + ' degrees" src="' + imageAt(it, entry.yaw) + '"></button>' +
+      '<button class="frame" type="button" aria-label="Open room ' + it.id + '"><img loading="lazy" alt="MazeBench room ' + it.room + (entry.view === 'top' ? ' overhead map' : ' from camera rotation ' + entry.yaw + ' degrees') + '" src="' + src + '"></button>' +
       '<div class="strip">' + (show ? '<span class="badge ' + (it.solvable ? 'yes' : 'no') + '">' + labelText(it) + '</span>' : '<button type="button" class="badge hidden">reveal</button>') +
-      '<span class="chip">camera ' + entry.yaw + '°</span></div>' +
+      '<span class="chip">' + chip + '</span></div>' +
       '<figcaption><span class="id">' + it.id + '</span> · ' + (it.tags && it.tags.length ? it.tags.join(', ') : 'walls only') + (it.edit ? ' · ' + it.edit.type.replace(/_/g, ' ') : '') + '</figcaption>';
     fig.querySelector('.frame').addEventListener('click', () => openDetail(it, entry.yaw));
     const hid = fig.querySelector('.badge.hidden');
@@ -209,13 +219,14 @@
     const twin = twinOf(it);
     const show = fLabels.checked || revealed.has(it.id);
     $('#d-title').textContent = 'Room ' + it.room + (it.world ? ' · world slot ' + it.world : '') + ' · pair ' + it.pair;
-    const anglesHtml = (x) => '<div class="angles">' + yawsOf(x).map((y) => '<figure><img alt="camera ' + y + '°" src="' + imageAt(x, y) + '"><figcaption>camera ' + y + '°' + (y === yaw && x === it ? ' · shown on the card' : '') + '</figcaption></figure>').join('') + '</div>';
+    const anglesHtml = (x) => '<div class="angles">' + (hasTop(x) ? '<figure><img alt="overhead map" src="' + x.images.top + '"><figcaption>overhead map · easier</figcaption></figure>' : '') +
+      yawsOf(x).map((y) => '<figure><img alt="camera ' + y + '°" src="' + imageAt(x, y) + '"><figcaption>game camera ' + y + '° · harder' + (y === yaw && x === it ? ' · shown on the card' : '') + '</figcaption></figure>').join('') + '</div>';
     const facts = (x) => '<dl class="facts">' +
       '<dt>label</dt><dd>' + (show ? '<span class="badge ' + (x.solvable ? 'yes' : 'no') + '">' + labelText(x) + '</span>' + (x.solvable && x.moves ? ' · shortest solution ' + x.moves + ' moves' : '') : '<em>hidden</em>') + '</dd>' +
       '<dt>edit</dt><dd>' + (editText(x) || '—') + '</dd>' +
       '<dt>mechanics</dt><dd>' + ((x.tags || []).join(', ') || 'walls only') + '</dd>' +
       '<dt>id</dt><dd><span class="id" style="font-family:var(--mono)">' + x.id + '</span></dd></dl>';
-    let html = '<div class="d-row"><h4>This room, all rotations</h4>' + anglesHtml(it) + '</div><div class="d-row">' + facts(it) + '</div>';
+    let html = '<div class="d-row"><h4>This room: overhead map and every camera rotation</h4>' + anglesHtml(it) + '</div><div class="d-row">' + facts(it) + '</div>';
     if (twin) {
       html += '<div class="d-row"><h4>Its twin: same room, the edit elsewhere</h4>' + anglesHtml(twin) + '</div><div class="d-row">' + facts(twin) + '</div>';
     }
@@ -227,7 +238,7 @@
   $('#d-close').addEventListener('click', () => $('#detail').close());
   $('#detail').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 
-  [fSet, fTag, fAngle, fLabels].forEach((el) => el.addEventListener('change', render));
+  [fSet, fTag, fAngle, fView, fLabels].forEach((el) => el.addEventListener('change', render));
   $('#shuffle').addEventListener('click', () => { shuffleSeed = (shuffleSeed * 7919 + 13) % 4294967296; render(); });
   render();
 

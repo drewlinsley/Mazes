@@ -88,8 +88,8 @@
   }
   function refreshRoomViews() {
     const set = STIM[src.set.value];
-    const views = (set && set.views && set.views.length) ? set.views : ['perspective'];
-    const labels = { perspective: 'game camera (as agents see it)', top: 'top-down' };
+    const views = ((set && set.views && set.views.length) ? set.views : ['perspective']).slice().sort(function (a, b) { return (a === 'top' ? 0 : 1) - (b === 'top' ? 0 : 1); });
+    const labels = { top: 'overhead map (easier)', perspective: 'game camera (harder, as agents see it)' };
     const current = src.view.value;
     src.view.innerHTML = views.map(function (v) { return '<option value="' + v + '">' + (labels[v] || v) + '</option>'; }).join('');
     src.view.value = views.indexOf(current) >= 0 ? current : views[0];
