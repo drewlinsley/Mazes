@@ -225,21 +225,28 @@ function roomStats(cells) {
   return stats;
 }
 
-function listShippedRooms() {
-  return fs.readdirSync(LEVELS_DIR).filter((f) => f.endsWith('.txt')).sort().map((file) => ({
+/** Rooms of a world directory (levels/*.txt + world_map.json); default: the shipped MazeBench world. */
+function listRooms(worldDir) {
+  const dir = worldDir ? path.resolve(worldDir) : GAME_DIR;
+  const levelsDir = path.join(dir, 'levels');
+  return fs.readdirSync(levelsDir).filter((f) => f.endsWith('.txt')).sort().map((file) => ({
     file,
     id: path.parse(file).name,
-    text: fs.readFileSync(path.join(LEVELS_DIR, file), 'utf8')
+    text: fs.readFileSync(path.join(levelsDir, file), 'utf8')
   }));
 }
+const listShippedRooms = () => listRooms(null);
 
-function worldMap() {
-  const map = JSON.parse(fs.readFileSync(path.join(GAME_DIR, 'world_map.json'), 'utf8'));
+function worldMap(worldDir) {
+  const dir = worldDir ? path.resolve(worldDir) : GAME_DIR;
+  const file = path.join(dir, 'world_map.json');
+  if (!fs.existsSync(file)) return {};
+  const map = JSON.parse(fs.readFileSync(file, 'utf8'));
   return map.levels || {};
 }
 
 module.exports = {
   ENGINE_DIR, GAME_DIR, LEVELS_DIR, LAYER, SEPARATOR,
   load, parseLevelText, serializeCells, cellTokens, joinTokens, copyCells,
-  buildPlayData, solve, replayPath, roomStats, listShippedRooms, worldMap
+  buildPlayData, solve, replayPath, roomStats, listRooms, listShippedRooms, worldMap
 };

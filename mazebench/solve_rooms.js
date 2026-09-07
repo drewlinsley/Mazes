@@ -3,7 +3,7 @@
  * Solve every shipped MazeBench room with the engine's own A* search and
  * record the result, one JSON line per room, in mazebench/rooms.jsonl.
  *
- *   node mazebench/solve_rooms.js [--cap 60000] [--out mazebench/rooms.jsonl] [--only id,id] [--resume]
+ *   node mazebench/solve_rooms.js [--cap 60000] [--out mazebench/rooms.jsonl] [--only id,id] [--resume] [--world DIR]
  *
  * 'solved'   : the player can collect every gem in the room (solution length in `moves`)
  * 'unsolved' : the whole reachable state space was searched without success
@@ -19,10 +19,11 @@ const cap = Number(opt('--cap', 60000));
 const resume = args.includes('--resume');
 const out = path.resolve(opt('--out', path.join(__dirname, 'rooms.jsonl')));
 const only = opt('--only', '') ? new Set(opt('--only', '').split(',')) : null;
+const world = opt('--world', '') || null;   // room directory from import_world.js (default: the shipped world)
 
 (async () => {
-  const map = E.worldMap();
-  let rooms = E.listShippedRooms().filter((r) => !only || only.has(r.id));
+  const map = E.worldMap(world);
+  let rooms = E.listRooms(world).filter((r) => !only || only.has(r.id));
   const done = new Set();
   if (resume && fs.existsSync(out)) {
     fs.readFileSync(out, 'utf8').split('\n').filter(Boolean).forEach((line) => { try { done.add(JSON.parse(line).id); } catch (e) { /* skip */ } });

@@ -5,7 +5,7 @@
  *
  *   node mazebench/perturb.js [--rooms mazebench/rooms.jsonl] [--only id,id] [--limit-rooms N]
  *        [--out mazebench/variants.jsonl] [--cap 60000] [--room-budget 90] [--pairs-per-room 2]
- *        [--per-type 8] [--seed 1]
+ *        [--per-type 8] [--seed 1] [--world DIR]   (DIR from import_world.js; default: the shipped world)
  *
  * For every room the engine's solver proves solvable, candidate single-cell
  * edits are generated (add or remove a wall, move the gem, the player or a
@@ -33,7 +33,8 @@ const OPTS = {
   roomBudget: Number(opt('--room-budget', 90)),
   pairsPerRoom: Number(opt('--pairs-per-room', 2)),
   perType: Number(opt('--per-type', 8)),
-  seed: opt('--seed', '1')
+  seed: opt('--seed', '1'),
+  world: opt('--world', '') || null   // room directory from import_world.js (default: the shipped world)
 };
 
 (async () => {
@@ -42,11 +43,11 @@ const OPTS = {
   if (fs.existsSync(OPTS.rooms)) {
     fs.readFileSync(OPTS.rooms, 'utf8').split('\n').filter(Boolean).forEach((line) => { const r = JSON.parse(line); known.set(r.id, r); });
   }
-  let rooms = E.listShippedRooms().filter((r) => !OPTS.only || OPTS.only.has(r.id));
+  let rooms = E.listRooms(OPTS.world).filter((r) => !OPTS.only || OPTS.only.has(r.id));
   rooms.forEach((r) => { if (known.has(r.id)) r.result = known.get(r.id); });
   rooms = rooms.filter((r) => !r.result || r.result.status === 'solved');
   if (OPTS.limitRooms) rooms = rooms.slice(0, OPTS.limitRooms);
-  const map = E.worldMap();
+  const map = E.worldMap(OPTS.world);
   fs.writeFileSync(OPTS.out, '');
   const log = (m) => process.stderr.write(m + '\n');
   let nPairs = 0, nRooms = 0;

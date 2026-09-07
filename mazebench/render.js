@@ -5,14 +5,15 @@
  * and write a manifest for the website and the evaluation script.
  *
  *   node mazebench/render.js --variants mazebench/variants.jsonl --out data/mazebench
- *        [--size 640] [--views perspective,top] [--tilt 58] [--zoom auto|1.4] [--limit N] [--cap 60000] [--no-verify]
+ *        [--size 640] [--views perspective,top] [--yaws 0,90,180,270] [--tilt 58] [--zoom auto|1.4] [--limit N] [--cap 60000] [--no-verify]
  *
  * --zoom auto (default) fills the frame with flat rooms (1.4) and backs off for rooms with tall stacks so nothing is cropped.
  *
  * Variants are written into throwaway "draft" worlds inside the engine's games
  * directory (the same mechanism the MazeBench Build mode uses), placed on a
  * checkerboard with void rooms around them so each frame shows one room.
- * Output: OUT/images/<id>-<view>.png, OUT/ascii/<id>.txt, OUT/manifest.jsonl, OUT/config.json
+ * Output: OUT/images/<id>-perspective.png (yaw 0) and <id>-perspective-y<yaw>.png for other yaws,
+ *         OUT/images/<id>-top.png, OUT/ascii/<id>.txt, OUT/json/<id>.json, OUT/manifest.jsonl, OUT/config.json
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -25,6 +26,7 @@ const OPTS = {
   out: path.resolve(opt('--out', 'data/mazebench')),
   size: Number(opt('--size', 640)),
   views: opt('--views', 'perspective,top').split(',').map((v) => v.trim()).filter(Boolean),
+  yaws: opt('--yaws', '0').split(',').map((v) => ((Number(v) % 360) + 360) % 360).filter((v) => v % 90 === 0),
   tilt: Number(opt('--tilt', 58)),
   zoom: opt('--zoom', 'auto') === 'auto' ? 'auto' : Number(opt('--zoom', 1.4)),
   limit: Number(opt('--limit', 0)),
@@ -95,6 +97,7 @@ async function main() {
   const selected = OPTS.limit ? variants.slice(0, OPTS.limit) : variants;
   fs.mkdirSync(path.join(OPTS.out, 'images'), { recursive: true });
   fs.mkdirSync(path.join(OPTS.out, 'ascii'), { recursive: true });
+  fs.mkdirSync(path.join(OPTS.out, 'json'), { recursive: true });
   const term = require(path.join(E.ENGINE_DIR, 'scripts', 'maze-terminal.js'));
   const rf = require(path.join(E.ENGINE_DIR, 'scripts', 'maze-render-frame.js'));
   const mazeEngine = term.loadMazeEngine();
@@ -114,6 +117,13 @@ async function main() {
       const ctx = term.createTerminalContext(mazeEngine, { gameId: worldId, levelId: v.levelId, pitch: 1, yaw: 0, observationMode: 'text', maxExpandedStates: OPTS.cap });
       v.ascii = stripHeader(term.renderScreen(ctx));
       v.legend = legendFor(term, ctx);
+      if (typeof term.buildModelJsonPayload === 'function') {
+        try {
+          const payload = await term.buildModelJsonPayload(ctx);
+          fs.writeFileSync(path.join(OPTS.out, 'json', v.id + '.json'), JSON.stringify(payload.json_observation || payload, null, 1) + '\n');
+          v.json = path.join('json', v.id + '.json');
+        } catch (e) { log('json observation failed for ' + v.id + ': ' + e.message); }
+      }
       fs.writeFileSync(path.join(OPTS.out, 'ascii', v.id + '.txt'), v.ascii);
       if (OPTS.verify) {
         const r = await term.solveContext(ctx);
@@ -134,10 +144,17 @@ async function main() {
         if (OPTS.views.includes('perspective')) {
           session.options.cameraZoom = OPTS.zoom === 'auto' ? autoZoom(v.level) : OPTS.zoom;
           v.zoom = session.options.cameraZoom;
-          const frame = await rf.captureSessionFrame(session);
-          const file = path.join('images', `${v.id}-perspective.png`);
-          fs.writeFileSync(path.join(OPTS.out, file), Buffer.from(frame.split(',')[1], 'base64'));
-          v.images.perspective = file;
+          v.images.yaws = {};
+          for (const yaw of OPTS.yaws) {
+            const turns = yaw / 90;
+            while ((((session.cameraYawTurns % 4) + 4) % 4) !== turns) await rf.applySessionAction(session, 'rotate camera right');
+            const frame = await rf.captureSessionFrame(session);
+            const file = path.join('images', yaw === 0 ? `${v.id}-perspective.png` : `${v.id}-perspective-y${yaw}.png`);
+            fs.writeFileSync(path.join(OPTS.out, file), Buffer.from(frame.split(',')[1], 'base64'));
+            if (yaw === 0) v.images.perspective = file;
+            v.images.yaws[yaw] = file;
+          }
+          while ((((session.cameraYawTurns % 4) + 4) % 4) !== 0) await rf.applySessionAction(session, 'rotate camera right');
         }
         if (OPTS.views.includes('top')) {
           await session.page.evaluate(() => { if (window.__MAZEBENCH_NATIVE_RAF__) { window.requestAnimationFrame = window.__MAZEBENCH_NATIVE_RAF__; delete window.__MAZEBENCH_NATIVE_RAF__; } });
@@ -157,7 +174,7 @@ async function main() {
       fs.appendFileSync(manifestPath, JSON.stringify({
         id: v.id, room: v.room, world: v.world, pair: v.pair, solvable: v.solvable, verified: v.verified ?? null,
         edit: v.edit, sameType: v.sameType, tags: v.tags, gems: v.gems, baseMoves: v.baseMoves, moves: v.moves, expanded: v.expanded,
-        generated: v.generated || null, zoom: v.zoom || null, images: v.images, ascii: path.join('ascii', v.id + '.txt'), legend: v.legend || {}, level: v.level
+        generated: v.generated || null, zoom: v.zoom || null, images: v.images, ascii: path.join('ascii', v.id + '.txt'), json: v.json || null, legend: v.legend || {}, level: v.level
       }) + '\n');
       done++;
       if (done % 10 === 0 || done === selected.length) log(`${done}/${selected.length} rendered (${Math.round((Date.now() - started) / 1000)}s)`);
@@ -166,7 +183,7 @@ async function main() {
     if (!OPTS.keepWorlds) fs.rmSync(path.join(E.ENGINE_DIR, 'games', worldId), { recursive: true, force: true });
   }
   fs.writeFileSync(path.join(OPTS.out, 'config.json'), JSON.stringify({
-    source: OPTS.variants, count: selected.length, solvable: selected.filter((v) => v.solvable).length, views: OPTS.views, size: OPTS.size, tilt: OPTS.tilt, zoom: OPTS.zoom,
+    source: OPTS.variants, count: selected.length, solvable: selected.filter((v) => v.solvable).length, views: OPTS.views, yaws: OPTS.yaws, size: OPTS.size, tilt: OPTS.tilt, zoom: OPTS.zoom,
     verify: OPTS.verify, mismatches, engine: E.ENGINE_DIR, generated: new Date().toISOString()
   }, null, 2));
   log(`done: ${done} variants, ${mismatches} label mismatches -> ${OPTS.out}`);
